@@ -75,6 +75,7 @@ res.status(200).json({
     message: "Dashboard counts fetched successfully",
     data: {
         totalMembers,
+        totalVendors: totalMembers,
         totalAccounts,
         totalAgents,
         closingBalance,
@@ -113,7 +114,8 @@ const getRecentData = async (req, res) => {
             message: "Recent data fetched successfully",
             data: {
                 recentAccounts,
-                recentMembers
+                recentMembers,
+                recentVendors: recentMembers
             }
         });
     } catch (error) {

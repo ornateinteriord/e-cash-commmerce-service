@@ -116,8 +116,10 @@ const MemberSchema = new mongoose.Schema(
     entered_by: { type: String, default: null },
     role: { type: String, default: "USER" }
   },
-  { timestamps: true, collection: "member_tbl" }
+  { timestamps: true, collection: "vendor_tbl" }
 );
 
-const MemberModel = mongoose.models.member_tbl || mongoose.model("member_tbl", MemberSchema);
-module.exports = MemberModel;
+const VendorModel = mongoose.models.vendor_tbl || mongoose.model("vendor_tbl", MemberSchema);
+VendorModel.MemberModel = VendorModel;
+VendorModel.VendorModel = VendorModel;
+module.exports = VendorModel;

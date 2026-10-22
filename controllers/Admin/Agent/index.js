@@ -1,5 +1,4 @@
 const AgentModel = require("../../../models/agent.model");
-const UserModel = require("../../../models/user.model");
 const { sendMail } = require("../../../utils/EmailService");
 const { generateWelcomeEmail } = require("../../../utils/emailTemplates");
 const { addAgentHierarchy } = require("../../../utils/hierarchyHelper");

@@ -44,7 +44,7 @@ router.get('/level-roi-schedules', Authenticated, authorizeRoles("ADMIN"), getLe
 router.get('/level-roi-schedules/:member_id', Authenticated, authorizeRoles("ADMIN"), getLevelRoiSchedules);
 
 
-// router.get('/all-daily-payouts/:member_id', Authenticated, authorizeRoles("ADMIN"), getDailyPayout);
+
 
 
 router.get('/reward-loans/:status', getRewardLoansByStatus);

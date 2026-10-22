@@ -79,7 +79,7 @@ const getTransactionDetails = async (req, res) => {
       },
       {
         $lookup: {
-          from: "member_tbl",
+          from: "vendor_tbl",
           localField: "extracted_related_id",
           foreignField: "Member_id",
           as: "related_member"

@@ -15,10 +15,6 @@ const { getPendingTransactions, approveWithdrawal, rejectWithdrawal } = require(
 const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet } = require("../controllers/Users/walletServiece/walletServies");
 const { getMemberCommissionTransactions } = require("../controllers/Member");
 const { getUplineTree } = require("../controllers/Users/mlmService/mlmService");
-// const { createOrder, getOrderStatus, webhook } = require("../controllers/Payments/CashfreeController");
-
-
-
 
 const router = express.Router();
 
@@ -73,10 +69,6 @@ router.get("/level-roi-schedules", Authenticated, getLevelRoiSchedules);
 router.post("/clime-reward-loan/:memberId",climeRewardLoan)
 
 router.post("/repayment-loan/:memberId",repaymentLoan)
-
-// router.post("/create-order" , createOrder);
-// router.get("/status/:orderId", getOrderStatus);
-// router.post('/webhook',webhook)
 
 module.exports = router;
 // Cashfree payments (moved from PaymentRoutes)

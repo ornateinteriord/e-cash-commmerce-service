@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const PaymentSchema = new mongoose.Schema(
   {
-    member: { type: mongoose.Schema.Types.ObjectId, ref: "member_tbl" },
+    member: { type: mongoose.Schema.Types.ObjectId, ref: "vendor_tbl" },
     memberId: { type: String, index: true },
     orderId: { type: String, index: true, unique: true },
     cfOrderId: { type: String },

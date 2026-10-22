@@ -120,7 +120,7 @@ const getPackageHistory = async (req, res) => {
             },
 {
                 $lookup: {
-        from: "member_tbl",
+        from: "vendor_tbl",
             localField: "transfered_to",
                 foreignField: "Member_id",
                     as: "memberInfo"
