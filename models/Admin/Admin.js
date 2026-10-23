@@ -14,8 +14,15 @@ const AdminSchema = new mongoose.Schema(
     reference_id: { type: String, default: null },
     branch_code: { type: String, default: null }
   },
-  {timestamps: true, collection: "admin_tbl" }
+  { timestamps: true, collection: "vendor_admin_tbl" }
 );
 
-const AdminModel = mongoose.models.admin_tbl || mongoose.model("admin_tbl", AdminSchema);
+const AdminModel =
+  mongoose.models.vendor_admin_tbl ||
+  mongoose.model("vendor_admin_tbl", AdminSchema);
+
+AdminModel.AdminModel = AdminModel;
+AdminModel.admin_tbl = AdminModel;
+AdminModel.vendor_admin_tbl = AdminModel;
+
 module.exports = AdminModel;
