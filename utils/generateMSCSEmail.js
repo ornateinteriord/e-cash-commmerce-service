@@ -1,16 +1,16 @@
 const generateMSCSEmail = (memberId, password, name = 'Member') => {
-  const welcomeSubject = 'Ecash - Account Registration Successful';
+  const welcomeSubject = 'E shopy - Account Registration Successful';
 
   const welcomeMessage = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #111827; border-radius: 12px; border: 1px solid #374151;">
       <!-- Brand Header -->
       <div style="text-align: center; margin-bottom: 10px;">
-        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">Ecash</h1>
+        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">E shopy</h1>
       </div>
       
       <!-- Content -->
       <div style="background-color: #1f2937; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-        <h2 style="color: #ffffff; margin-top: 0; text-align: center; font-size: 24px;">Welcome to Ecash!</h2>
+        <h2 style="color: #ffffff; margin-top: 0; text-align: center; font-size: 24px;">Welcome to E shopy!</h2>
         
         <p style="color: #d1d5db; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
           Dear <strong style="color: #fbbf24;">${name}</strong>,
@@ -34,7 +34,7 @@ const generateMSCSEmail = (memberId, password, name = 'Member') => {
 
       <!-- Footer -->
       <div style="text-align: center; margin-top: 25px; color: #9ca3af; font-size: 12px;">
-        &copy; ${new Date().getFullYear()} Ecash. All rights reserved.
+        &copy; ${new Date().getFullYear()} E shopy. All rights reserved.
       </div>
     </div>
   `;
@@ -43,13 +43,13 @@ const generateMSCSEmail = (memberId, password, name = 'Member') => {
 };
 
 const generateTopUpApprovedEmail = (name, amount) => {
-  const subject = 'Ecash - Fund Load Approved';
+  const subject = 'E shopy - Fund Load Approved';
 
   const htmlContent = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #111827; border-radius: 12px; border: 1px solid #374151;">
       <!-- Brand Header -->
       <div style="text-align: center; margin-bottom: 10px;">
-        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">Ecash</h1>
+        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">E shopy</h1>
       </div>
       
       <!-- Content -->
@@ -77,7 +77,7 @@ const generateTopUpApprovedEmail = (name, amount) => {
 
       <!-- Footer -->
       <div style="text-align: center; margin-top: 25px; color: #9ca3af; font-size: 12px;">
-        &copy; ${new Date().getFullYear()} Ecash. All rights reserved.
+        &copy; ${new Date().getFullYear()} E shopy. All rights reserved.
       </div>
     </div>
   `;

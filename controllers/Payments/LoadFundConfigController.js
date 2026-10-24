@@ -9,7 +9,7 @@ const getLoadFundConfig = async (req, res) => {
       config = {
         qr_code_url: "",
         wallet_address: "0x58C50C5E08C7BFCb571E604f9Cf03dB94D3b83B9",
-        network_text: "Ecash-BEP20"
+        network_text: "Eshopy-BEP20"
       };
     }
     return res.status(200).json({ success: true, config });
@@ -37,7 +37,7 @@ const updateLoadFundConfig = async (req, res) => {
       config = new LoadFundConfig({
         qr_code_url,
         wallet_address,
-        network_text: network_text || "Ecash-BEP20"
+        network_text: network_text || "Eshopy-BEP20"
       });
       await config.save();
     }

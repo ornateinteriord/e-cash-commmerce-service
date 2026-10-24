@@ -162,7 +162,7 @@ const signup = async (req, res) => {
 
       const { welcomeMessage, welcomeSubject } = generateMSCSEmail(memberId, password, Name);
 
-      const textContent = `Dear ${Name}, Your account registration with Ecash has been completed. Member ID: ${memberId}, Password: ${password}. Your account is under verification process.`;
+      const textContent = `Dear ${Name}, Your account registration with E shopy has been completed. Member ID: ${memberId}, Password: ${password}. Your account is under verification process.`;
 
       const logoPath = path.join(__dirname, '../../utils/BMS.png');
       const fallbackLogoPath = path.join(__dirname, '../../utils/bms_logo.png');

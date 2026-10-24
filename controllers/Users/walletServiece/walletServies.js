@@ -791,7 +791,7 @@ const sendWithdrawalOTP = async (req, res) => {
     const htmlContent = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #111827; border-radius: 12px; border: 1px solid #374151;">
       <div style="text-align: center; margin-bottom: 10px;">
-        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">Ecash</h1>
+        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">E shopy</h1>
       </div>
       <div style="background-color: #1f2937; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
         <h2 style="color: #ffffff; margin-top: 0; text-align: center; font-size: 24px;">Withdrawal Verification</h2>
@@ -810,12 +810,12 @@ const sendWithdrawalOTP = async (req, res) => {
         </p>
       </div>
       <div style="text-align: center; margin-top: 25px; color: #9ca3af; font-size: 12px;">
-        &copy; ${new Date().getFullYear()} Ecash. All rights reserved.
+        &copy; ${new Date().getFullYear()} E shopy. All rights reserved.
       </div>
     </div>`;
 
     // OTP sending commented out for now:
-    // await sendMail(member.email, "Ecash - Withdrawal Verification OTP", htmlContent, `Your OTP is ${otp}`, attachments);
+    // await sendMail(member.email, "E shopy - Withdrawal Verification OTP", htmlContent, `Your OTP is ${otp}`, attachments);
 
     return res.status(200).json({ success: true, message: "OTP bypassed for now" });
   } catch (error) {
@@ -1070,7 +1070,7 @@ const lookupMemberForTransfer = async (req, res) => {
     if (!query) {
       return res.status(400).json({ success: false, message: "Query parameter required" });
     }
-    let cleanQuery = query.replace(/^(?:BMS|Ecash)-P2P:/i, "").trim();
+    let cleanQuery = query.replace(/^(?:BMS|Ecash|Eshopy|E-shopy)-P2P:/i, "").trim();
 
     const member = await MemberModel.findOne({
       $or: [
@@ -1093,7 +1093,7 @@ const lookupMemberForTransfer = async (req, res) => {
         email: member.email,
         mobileno: member.mobileno ? String(member.mobileno).replace(/.(?=.{4})/g, '*') : 'N/A',
         profile_image: member.profile_image,
-        qr_code: member.qr_code || `Ecash-P2P:${member.Member_id || member.member_id}`
+        qr_code: member.qr_code || `Eshopy-P2P:${member.Member_id || member.member_id}`
       }
     });
   } catch (error) {
@@ -1124,7 +1124,7 @@ const transferP2PWallet = async (req, res) => {
       return res.status(404).json({ success: false, message: "Sender member not found" });
     }
 
-    let cleanReceiver = receiverId.replace(/^(?:BMS|Ecash)-P2P:/i, "").trim();
+    let cleanReceiver = receiverId.replace(/^(?:BMS|Ecash|Eshopy|E-shopy)-P2P:/i, "").trim();
     const receiverMember = await MemberModel.findOne({
       $or: [
         { Member_id: cleanReceiver },

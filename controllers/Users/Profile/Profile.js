@@ -218,8 +218,8 @@ const activateMemberPackage = async (req, res) => {
     let selectedPackage = null;
     if (packageType === "NONE") {
       selectedPackage = { name: "NONE", value: 0 };
-    } else if (packageType && (packageType.startsWith("Ecash_") || packageType.startsWith("BMS_") || packageType.startsWith("PKG-") || packageType.startsWith("PKG_"))) {
-      const amtStr = packageType.replace(/^(Ecash_|BMS_|PKG-|PKG_)/, "");
+    } else if (packageType && (packageType.startsWith("Eshopy_") || packageType.startsWith("Ecash_") || packageType.startsWith("BMS_") || packageType.startsWith("PKG-") || packageType.startsWith("PKG_"))) {
+      const amtStr = packageType.replace(/^(Eshopy_|Ecash_|BMS_|PKG-|PKG_)/, "");
       const amt = Number(amtStr);
       if (!isNaN(amt) && amt > 0) {
         selectedPackage = { name: `PKG-${amt}`, value: amt };

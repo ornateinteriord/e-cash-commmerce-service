@@ -21,7 +21,7 @@ const getTransporter = () => {
 const sendMail = async (email, subject, htmlContent, textContent = '', attachments = []) => {
   try {
     const mailOptions = {
-      from: `"Ecash" <${process.env.EMAIL_USER}>`,
+      from: `"E shopy" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: subject,
       html: htmlContent,
