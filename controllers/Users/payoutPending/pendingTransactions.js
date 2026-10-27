@@ -112,13 +112,20 @@ const rejectWithdrawal = async (req, res) => {
     }
     await transaction.save();
 
-    // Refund the debited amount back to member's wallet_balance
-    const refundAmount = parseFloat(transaction.ew_debit) || parseFloat(transaction.gross_amount) || 0;
+    // Refund the debited amount back to member's wallet_balance or vendor_wallet
+    const refundAmount = parseFloat(transaction.vw_debit) || parseFloat(transaction.ew_debit) || parseFloat(transaction.gross_amount) || 0;
     if (refundAmount > 0) {
-      await MemberModel.findOneAndUpdate(
-        { Member_id: transaction.member_id },
-        { $inc: { wallet_balance: refundAmount } }
-      );
+      if (transaction.transaction_type === "Vendor Withdrawal" || parseFloat(transaction.vw_debit) > 0) {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ Member_id: transaction.member_id }, { member_id: transaction.member_id }] },
+          { $inc: { vendor_wallet: refundAmount } }
+        );
+      } else {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ Member_id: transaction.member_id }, { member_id: transaction.member_id }] },
+          { $inc: { wallet_balance: refundAmount } }
+        );
+      }
     }
 
     return res.status(200).json({

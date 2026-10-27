@@ -312,6 +312,8 @@ const getWalletOverview = async (req, res) => {
         purchaseBalance: (member.purchase_wallet || 0).toFixed(2),
         // Fixed Deposit Wallet
         fixedDepositBalance: (member.fixed_deposit_wallet || 0).toFixed(2),
+        // Vendor Wallet
+        vendorWalletBalance: (member.vendor_wallet || 0).toFixed(2),
         topUpTransactions: topUpTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         fixedDepositTransactions: transactions.filter(tx => (parseFloat(tx.fd_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('fixed deposit'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         purchaseTransactions: transactions.filter(tx => (parseFloat(tx.pw_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('purchase'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
@@ -1257,4 +1259,190 @@ const transferP2PWallet = async (req, res) => {
   }
 };
 
-module.exports = { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet, getMemberWithdrawalLimits };
+/**
+ * Vendor Wallet Overview
+ * Returns vendor wallet balance, withdrawal stats, and transactions
+ */
+const getVendorWalletOverview = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+
+    const member = await MemberModel.findOne({
+      $or: [{ Member_id: memberId }, { member_id: memberId }]
+    });
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const actualMemberId = member.Member_id || memberId;
+    const numericPart = parseInt(actualMemberId.replace(/[^0-9]/g, ''), 10);
+    const pad5 = !isNaN(numericPart) ? String(numericPart).padStart(5, '0') : actualMemberId;
+    const pad6 = !isNaN(numericPart) ? String(numericPart).padStart(6, '0') : actualMemberId;
+
+    const possibleIds = Array.from(new Set([
+      actualMemberId,
+      actualMemberId.replace('BMS', ''),
+      `BMS${pad5}`,
+      `BMS${pad6}`,
+      pad5,
+      pad6,
+      !isNaN(numericPart) ? `BMS${numericPart}` : actualMemberId
+    ].filter(Boolean)));
+
+    const transactions = await TransactionModel.find({
+      member_id: { $in: possibleIds },
+      $or: [
+        { transaction_type: { $regex: /vendor/i } },
+        { description: { $regex: /vendor/i } },
+        { vw_credit: { $exists: true, $ne: "" } },
+        { vw_debit: { $exists: true, $ne: "" } }
+      ]
+    }).sort({ createdAt: -1, transaction_date: -1 });
+
+    const vendorBalance = Math.max(0, parseFloat(member.vendor_wallet) || 0);
+
+    const completedWithdrawals = transactions
+      .filter(tx => (tx.transaction_type?.toLowerCase().includes("withdrawal") || parseFloat(tx.vw_debit) > 0) && tx.status === "Completed")
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
+
+    const pendingWithdrawals = transactions
+      .filter(tx => (tx.transaction_type?.toLowerCase().includes("withdrawal") || parseFloat(tx.vw_debit) > 0) && (tx.status === "Pending" || tx.status === "Processing"))
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
+
+    const totalIncome = transactions
+      .filter(tx => (parseFloat(tx.vw_credit) > 0 || (!tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")))
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || parseFloat(tx.net_amount) || 0), 0);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        balance: vendorBalance.toFixed(2),
+        vendorWalletBalance: vendorBalance.toFixed(2),
+        totalIncome: totalIncome.toFixed(2),
+        totalWithdrawal: completedWithdrawals.toFixed(2),
+        pendingWithdrawals: pendingWithdrawals.toFixed(2),
+        transactionsCount: transactions.length,
+        transactions: transactions
+      }
+    });
+  } catch (error) {
+    console.error("Error in getVendorWalletOverview:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+/**
+ * Vendor Wallet Withdrawal
+ * Exclusively handles withdrawals from Vendor Wallet
+ */
+const vendorWalletWithdraw = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    const { amount } = req.body;
+
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+    if (!amount) {
+      return res.status(400).json({ success: false, message: "Withdrawal amount is required" });
+    }
+
+    const withdrawalAmount = parseFloat(amount);
+    if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
+    }
+
+    const member = await MemberModel.findOne({
+      $or: [{ Member_id: memberId }, { member_id: memberId }]
+    });
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const actualMemberId = member.Member_id || memberId;
+    const currentBalance = parseFloat(member.vendor_wallet) || 0;
+
+    if (withdrawalAmount > currentBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient vendor wallet balance. Available: ₹${currentBalance.toFixed(2)}`
+      });
+    }
+
+    // 10% standard deduction
+    const deduction = withdrawalAmount * 0.10;
+    const netAmount = withdrawalAmount - deduction;
+
+    const newTransactionId = await generateTransactionId("V_WTH");
+
+    const newTransaction = new TransactionModel({
+      transaction_id: newTransactionId,
+      transaction_date: new Date(),
+      member_id: actualMemberId,
+      description: "Vendor Wallet Withdrawal Request",
+      transaction_type: "Vendor Withdrawal",
+      vw_credit: 0,
+      vw_debit: withdrawalAmount,
+      ew_credit: 0,
+      ew_debit: 0,
+      status: "Pending",
+      deduction: deduction,
+      net_amount: netAmount,
+      gross_amount: withdrawalAmount
+    });
+
+    await newTransaction.save();
+
+    // Deduct from vendor_wallet atomically
+    const updatedMember = await MemberModel.findOneAndUpdate(
+      { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
+      { $inc: { vendor_wallet: -withdrawalAmount } },
+      { new: true }
+    );
+
+    const newBalance = Math.max(0, parseFloat(updatedMember.vendor_wallet) || 0);
+
+    return res.status(200).json({
+      success: true,
+      message: "Vendor wallet withdrawal request submitted successfully",
+      data: {
+        transactionId: newTransaction.transaction_id,
+        withdrawalDetails: {
+          grossAmount: withdrawalAmount.toFixed(2),
+          deduction: deduction.toFixed(2),
+          netAmount: netAmount.toFixed(2),
+          deductionRate: "10%"
+        },
+        balanceDetails: {
+          previousBalance: currentBalance.toFixed(2),
+          withdrawalAmount: withdrawalAmount.toFixed(2),
+          newAvailableBalance: newBalance.toFixed(2)
+        },
+        status: "Pending"
+      }
+    });
+  } catch (error) {
+    console.error("Error in vendorWalletWithdraw:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during vendor wallet withdrawal",
+      error: error.message
+    });
+  }
+};
+
+module.exports = {
+  getWalletOverview,
+  getWalletWithdraw,
+  transferWallet,
+  sendTransferOTP,
+  sendWithdrawalOTP,
+  lookupMemberForTransfer,
+  transferP2PWallet,
+  getMemberWithdrawalLimits,
+  getVendorWalletOverview,
+  vendorWalletWithdraw
+};

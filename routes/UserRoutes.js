@@ -12,7 +12,7 @@ const { createTicket, getTickets } = require("../controllers/Users/Ticket/Ticket
 const Authenticated = require("../middlewares/auth");
 const {  triggerMLMCommissions, getMemberCommissionSummary, getDailyPayout, climeRewardLoan, repaymentLoan, getROIBenefits, triggerUserROI, getLevelRoiSchedules } = require("../controllers/Users/Payout/PayoutController");
 const { getPendingTransactions, approveWithdrawal, rejectWithdrawal } = require("../controllers/Users/payoutPending/pendingTransactions");
-const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet } = require("../controllers/Users/walletServiece/walletServies");
+const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet, getVendorWalletOverview, vendorWalletWithdraw } = require("../controllers/Users/walletServiece/walletServies");
 const { getMemberCommissionTransactions } = require("../controllers/Member");
 const { getUplineTree } = require("../controllers/Users/mlmService/mlmService");
 
@@ -56,6 +56,10 @@ router.get("/transfer-lookup", Authenticated, lookupMemberForTransfer);
 router.post("/transfer-p2p", Authenticated, transferP2PWallet);
 router.put('/approve-withdrawal/:transaction_id', Authenticated, approveWithdrawal);
 router.put('/reject-withdrawal/:transaction_id', Authenticated, rejectWithdrawal);
+
+// Vendor Wallet Routes (Separate functions)
+router.get("/vendor-wallet/overview/:memberId", Authenticated, getVendorWalletOverview);
+router.post("/vendor-wallet/withdraw/:memberId", Authenticated, vendorWalletWithdraw);
 
 
 router.get("/level-benefits/:member_id", Authenticated, getMemberCommissionSummary);
