@@ -3,7 +3,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
-require("dotenv").config()
+require("dotenv").config();
 const ImageKit = require("imagekit");
 require("./models/db"); // Your Mongo DB connection file
 
@@ -22,13 +22,10 @@ const ReceiptsRoutes = require("./routes/ReceiptsRoute");
 const PaymentsRoutes = require("./routes/PaymentsRoute");
 const CashTransactionRoutes = require("./routes/CashTransactionRoute");
 
-
-
 // 🔐 CASHFREE WEBHOOK CONTROLLER
 const { handleWebhook } = require("./controllers/Payments/CashfreeController");
 const connectDB = require("./models/db");
 const { initCronJobs } = require("./cron/cron");
-
 
 const app = express();
 const server = http.createServer(app);
@@ -38,6 +35,10 @@ const server = http.createServer(app);
 // ======================================================
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  "https://vendor.eshopy.biz",
+  "https://eshopy.biz",
+  "https://www.eshopy.biz",
+  "https://admin.eshopy.biz",
   "https://BMS-worl-club.vercel.app",
   "https://www.BMSworld.club",
   "https://BMSworld.club",
@@ -48,42 +49,39 @@ const allowedOrigins = [
   "https://www.bluskymicroservices.com"
 ].filter(Boolean).map(o => o.replace(/\/$/, ""));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // Postman / server-to-server
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Postman / server-to-server / curl
+  const cleanOrigin = origin.replace(/\/$/, "");
+  const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
+  const isNgrok = origin.endsWith("ngrok-free.dev");
+  const isEshopy = /^https:\/\/(.*\.)?eshopy\.biz$/.test(cleanOrigin);
+  const isVercel = cleanOrigin.endsWith(".vercel.app");
 
-      const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
-      const isNgrok = origin.endsWith("ngrok-free.dev");
-      const cleanOrigin = origin.replace(/\/$/, "");
+  return (
+    isLocalhost ||
+    isNgrok ||
+    isEshopy ||
+    isVercel ||
+    allowedOrigins.includes(cleanOrigin) ||
+    allowedOrigins.includes(origin)
+  );
+};
 
-      if (isLocalhost || isNgrok || allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error(`CORS BLOCKED: ${origin}`));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin", "ngrok-skip-browser-warning"],
-  })
-);
-
-app.options("*", cors({
+const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
-    const isNgrok = origin.endsWith("ngrok-free.dev");
-    const cleanOrigin = origin.replace(/\/$/, "");
-    if (isLocalhost || isNgrok || allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       return callback(null, true);
     }
+    console.warn(`⚠️ CORS blocked for origin: ${origin}`);
     return callback(new Error(`CORS BLOCKED: ${origin}`));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin", "ngrok-skip-browser-warning"],
-}));
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 app.use(async (req, res, next) => {
   try {
@@ -104,27 +102,9 @@ app.use(async (req, res, next) => {
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // Postman / server-to-server
-
-      const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
-      const isNgrok = origin?.endsWith("ngrok-free.dev");
-      const socketAllowedOrigins = [
-        process.env.FRONTEND_URL,
-        "https://www.BMSworld.club",
-        "https://BMSworld.club",
-        "https://BMS-worl-club.vercel.app",
-        "https://blusky-microservices-ui.vercel.app",
-        "https://bluskymicro01ui.vercel.app",
-        "https://e-cash.in",
-        "https://www.e-cash.in",
-        "https://www.bluskymicroservices.com"
-      ].filter(Boolean).map(o => o.replace(/\/$/, ""));
-
-      const cleanOrigin = origin?.replace(/\/$/, "");
-      if (isLocalhost || isNgrok || socketAllowedOrigins.includes(cleanOrigin) || socketAllowedOrigins.includes(origin)) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error(`WebSocket CORS BLOCKED: ${origin}`));
     },
     credentials: true
@@ -169,9 +149,6 @@ io.on("connection", (socket) => {
     }
   });
 });
-
-
-
 
 // ======================================================
 // ⚠️ IMPORTANT: RAW BODY FOR CASHFREE WEBHOOK
@@ -232,8 +209,6 @@ app.use("/chat", ChatRoutes);
 app.use("/banking", ReceiptsRoutes);
 app.use("/banking", PaymentsRoutes);
 app.use("/banking/cash-transactions", CashTransactionRoutes);
-
-
 
 // ======================================================
 //        🏠 HOME
