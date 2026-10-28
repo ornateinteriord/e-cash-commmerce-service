@@ -13,10 +13,9 @@ const GLOBAL_LOCK_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 /**
  * Process daily ROI / Daily Incentive for all eligible members (Primary & Add-on packages).
  * Payout rules:
- * - 1% daily of the package/invested amount (e.g., ₹3 daily for ₹300)
+ * - 0.50% daily of the package/invested amount (e.g., ₹1.5 daily for ₹300)
  * - Duration: 200 days (target: 200 payouts)
- * - 50% credited to Credits Wallet (ew_credit / wallet_balance)
- * - 50% credited to Re-Top Up Wallet (tw_credit / top_up_wallet)
+ * - 100% credited to Credits Wallet (ew_credit / wallet_balance)
  * 
  * @param {string|null} targetMemberId - Optional member ID to process specifically
  * @param {string|null} customToday - Optional custom date override (YYYY-MM-DD)
@@ -100,10 +99,10 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     continue;
                 }
 
-                // Dynamic daily payout based on level / schedule or default 1%
+                // Dynamic daily payout based on level / schedule or default 0.50%
                 let dailyTotalAmount = (member.roi_daily_amount && member.roi_daily_amount > 0)
                     ? Number(member.roi_daily_amount)
-                    : Math.round(pkgAmount * 0.01 * 100) / 100;
+                    : Math.round(pkgAmount * 0.005 * 100) / 100;
 
                 // Ensure total payout does not exceed 2x total target
                 const totalTargetRoi = pkgAmount * 2;
@@ -125,9 +124,9 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     const txId = `DI_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
                     const memberLevel = member.level !== undefined && member.level !== null ? member.level : 0;
-                    const descText = memberLevel > 0 
+                    const descText = memberLevel > 0
                         ? `Daily Incentive (Level ${memberLevel} - ₹${actualDaily}/day) - Day ${newCount}/${targetDays}`
-                        : `Daily Incentive (1% of ₹${pkgAmount}) - Day ${newCount}/${targetDays}`;
+                        : `Daily Incentive (0.50% of ₹${pkgAmount}) - Day ${newCount}/${targetDays}`;
 
                     // Create transaction with 100% Credits (ew_credit)
                     const dailyTx = new TransactionModel({
@@ -241,7 +240,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     continue;
                 }
 
-                const dailyTotalAmount = Math.round(pkgAmount * 0.01 * 100) / 100;
+                const dailyTotalAmount = Math.round(pkgAmount * 0.005 * 100) / 100;
                 const creditAmount = dailyTotalAmount;
 
                 for (const payoutDate of daysToProcess) {
@@ -254,7 +253,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         member_id: addon.member_id,
                         Name: member.Name,
                         mobileno: member.mobileno,
-                        description: `Daily Incentive (1% of ₹${pkgAmount} Add-on) - Day ${newCount}/${targetDays}`,
+                        description: `Daily Incentive (0.50% of ₹${pkgAmount} Add-on) - Day ${newCount}/${targetDays}`,
                         transaction_type: "Daily Incentive",
                         ew_credit: creditAmount.toString(),
                         tw_credit: "0",
