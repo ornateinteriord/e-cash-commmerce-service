@@ -78,15 +78,15 @@ const distributeGlobalIncome = async (memberId, packageAmount) => {
         // Payout is 0.2% of the NEW buyer's package amount.
         const payoutAmount = Number((amount * 0.002).toFixed(2));
 
-        // 100% to Credits Wallet - Retopup wallet not required
+        // 100% to Vendor Sale Value Wallet (vw_credit)
         const mainWalletAmount = payoutAmount;
 
-        // Distribute 100% to Credits Wallet
+        // Distribute 100% to Vendor Wallet
         await MemberModel.findOneAndUpdate(
           { Member_id: beneficiaryId },
           { 
             $inc: { 
-              wallet_balance: mainWalletAmount,
+              vendor_wallet: mainWalletAmount,
               global_income: payoutAmount // Track total global income
             } 
           }
@@ -95,14 +95,15 @@ const distributeGlobalIncome = async (memberId, packageAmount) => {
         // Generate a fast random txId to prevent DB bottlenecks
         const txId = "GI" + Date.now().toString() + Math.floor(1000 + Math.random() * 9000).toString();
 
-        // Record the transaction matching credits wallet (100% ew_credit)
+        // Record the transaction matching vendor wallet (100% vw_credit)
         const transaction = new TransactionModel({
           transaction_id: txId,
           transaction_date: new Date(),
           member_id: beneficiaryId,
           description: `Global Income (₹${beneficiaryEntry.package_amount}) from ${memberId}'s investment`,
           transaction_type: "Global Income",
-          ew_credit: mainWalletAmount.toString(),
+          vw_credit: mainWalletAmount.toString(),
+          ew_credit: "0",
           tw_credit: "0",
           fd_credit: "0",
           ew_debit: "0",

@@ -128,7 +128,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         ? `Daily Incentive (Level ${memberLevel} - ₹${actualDaily}/day) - Day ${newCount}/${targetDays}`
                         : `Daily Incentive (0.50% of ₹${pkgAmount}) - Day ${newCount}/${targetDays}`;
 
-                    // Create transaction with 100% Credits (ew_credit)
+                    // Create transaction with 100% Vendor Wallet (vw_credit)
                     const dailyTx = new TransactionModel({
                         transaction_id: txId,
                         transaction_date: payoutDate,
@@ -137,7 +137,8 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         mobileno: member.mobileno,
                         description: descText,
                         transaction_type: "Daily Incentive",
-                        ew_credit: creditAmount.toString(),
+                        vw_credit: creditAmount.toString(),
+                        ew_credit: "0",
                         tw_credit: "0",
                         ew_debit: "0",
                         tw_debit: "0",
@@ -155,13 +156,13 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     baseProcessedCount++;
                     processedCount++;
 
-                    // Update Member wallet balance and ROI status
+                    // Update Member vendor wallet balance and ROI status
                     const isNowCompleted = currentCount >= targetDays || currentPaid >= totalTargetRoi;
                     await MemberModel.updateOne(
                         { Member_id: member.Member_id },
                         {
                             $inc: {
-                                wallet_balance: creditAmount,
+                                vendor_wallet: creditAmount,
                                 roi_total_paid: creditAmount
                             },
                             $set: {
@@ -255,7 +256,8 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         mobileno: member.mobileno,
                         description: `Daily Incentive (0.50% of ₹${pkgAmount} Add-on) - Day ${newCount}/${targetDays}`,
                         transaction_type: "Daily Incentive",
-                        ew_credit: creditAmount.toString(),
+                        vw_credit: creditAmount.toString(),
+                        ew_credit: "0",
                         tw_credit: "0",
                         ew_debit: "0",
                         tw_debit: "0",
@@ -286,12 +288,12 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         }
                     );
 
-                    // Credit Member wallet
+                    // Credit Member vendor wallet
                     await MemberModel.updateOne(
                         { Member_id: addon.member_id },
                         {
                             $inc: {
-                                wallet_balance: creditAmount
+                                vendor_wallet: creditAmount
                             }
                         }
                     );
@@ -388,7 +390,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     const descText = `Level ${schedule.level} Daily ROI (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Member ${schedule.from_member_id}`;
 
-                    // 1. Create Transaction (ew_credit wallet balance)
+                    // 1. Create Transaction (vw_credit vendor wallet balance)
                     const levelRoiTx = new TransactionModel({
                         transaction_id: txId,
                         transaction_date: payoutDate,
@@ -400,7 +402,8 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         benefit_type: "Level ROI",
                         level: schedule.level,
                         related_member_id: schedule.from_member_id,
-                        ew_credit: String(actualDaily),
+                        vw_credit: String(actualDaily),
+                        ew_credit: "0",
                         ew_debit: "0",
                         net_amount: actualDaily,
                         gross_amount: actualDaily,
@@ -427,10 +430,10 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     await Promise.all([levelRoiTx.save(), payoutRecord.save()]);
 
-                    // 3. Update Sponsor Wallet Balance
+                    // 3. Update Sponsor Vendor Wallet Balance
                     await MemberModel.updateOne(
                         { $or: [{ Member_id: schedule.sponsor_id }, { member_id: schedule.sponsor_id }] },
-                        { $inc: { wallet_balance: actualDaily } }
+                        { $inc: { vendor_wallet: actualDaily } }
                     );
 
                     currentPaid += actualDaily;

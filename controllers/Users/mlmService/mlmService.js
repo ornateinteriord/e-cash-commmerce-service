@@ -203,8 +203,8 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             amount: levelAmount,
             percentage: levelPercentage,
             packageValue: packageValue,
-            payout_type: `Level ${upline.level} Level Bonus (Invest Amount)`,
-            description: `Level ${upline.level} Benefits commission (${levelPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
+            payout_type: `Product Level ${upline.level} Income`,
+            description: `Product Level Income - Level ${upline.level} (${levelPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
           console.log(`✅ [LEVEL BONUS] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${levelAmount} (${levelPercentage}%)`);
@@ -360,8 +360,8 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
     // Use a unique compound ID to ensure consistency and speed in high-concurrency 
     const newTransactionId = `T-L-${payout_id}-${Math.floor(Math.random() * 1000)}`;
 
-    // 100% Main Wallet (Credits/Withdrawal) - Retopup wallet not required
-    const mainWalletAmount = Number(amount.toFixed(2));
+    // 100% Vendor Sale Value Wallet (vendor_wallet / vw_credit)
+    const commissionAmount = Number(amount.toFixed(2));
 
     const transaction = new TransactionModel({
       transaction_id: newTransactionId,
@@ -369,10 +369,11 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       member_id: memberId,
       Name: sponsor_name,
       mobileno: sponsor_mobileno,
-      reference_no: payout_id.toString(),
+      reference_no: payoutId.toString(),
       description: payout_type,
-      transaction_type: payout_type.includes('Referral Bonus') ? "Referral Bonus" : "Level Bonus",
-      ew_credit: mainWalletAmount.toString(),
+      transaction_type: payout_type.includes('Referral Bonus') ? "Referral Bonus" : "Product Level Income",
+      vw_credit: commissionAmount.toString(),
+      ew_credit: "0",
       tw_credit: "0",
       uw_credit: "0",
       fd_credit: "0",
@@ -383,17 +384,17 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       benefit_type: level === 1 ? "direct" : "indirect",
       related_member_id: new_member_id,
       related_member_name: new_member_name,
-      related_payout_id: payout_id
+      related_payout_id: payoutId
     });
 
     await transaction.save({ session });
 
-    // Add full amount to sponsor's credits wallet
+    // Add full commission amount to sponsor's vendor sale value wallet
     await MemberModel.findOneAndUpdate(
       { Member_id: memberId },
       { 
         $inc: {
-          wallet_balance: mainWalletAmount
+          vendor_wallet: commissionAmount
         } 
       },
       { session }

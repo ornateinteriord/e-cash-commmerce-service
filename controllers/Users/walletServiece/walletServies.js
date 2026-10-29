@@ -117,7 +117,7 @@ const getWalletOverview = async (req, res) => {
     const calculatedTopUp = Math.max(0, topUpCredits - topUpDebits);
     const topUpBalance = Math.max(calculatedTopUp, member.top_up_wallet || 0);
 
-    // === NORMAL WALLET (exclude loan AND top-up transactions) ===
+    // === FIRST WALLET (MAIN WALLET: strictly for Add Money deposits & package activation debits) ===
     const nonLoanTransactions = transactions.filter(tx =>
       !tx.transaction_type?.toLowerCase().includes('loan') &&
       !tx.description?.toLowerCase().includes('loan') &&
@@ -128,9 +128,14 @@ const getWalletOverview = async (req, res) => {
       tx.status === "Completed" || tx.status === "Pending" || tx.status === "Approved"
     );
 
-    const availableBalance = completedAndPendingTx.reduce((acc, tx) =>
+    const calculatedMainBalance = completedAndPendingTx.reduce((acc, tx) =>
       acc + (parseFloat(tx.ew_credit) || 0) - (parseFloat(tx.ew_debit) || 0), 0
     );
+
+    // Synchronize First Wallet available balance with member.wallet_balance
+    const availableBalance = member.wallet_balance !== undefined && member.wallet_balance !== null
+      ? Math.max(0, parseFloat(member.wallet_balance) || 0)
+      : Math.max(0, calculatedMainBalance);
 
     // For display purposes only - total income/expenses from completed transactions
     const completedTx = nonLoanTransactions.filter(tx => tx.status === "Completed");
@@ -145,23 +150,42 @@ const getWalletOverview = async (req, res) => {
       .filter(tx => tx.transaction_type !== "Withdrawal" && tx.status === "Completed")
       .reduce((acc, tx) => acc + (parseFloat(tx.ew_debit) || 0), 0);
 
+    // Product Level Income: STRICTLY only transactions with "Product Level" or Level Income in description / type
     const levelBenefits = nonLoanTransactions
       .filter(tx => {
-        const txType = tx.transaction_type?.toLowerCase() || "";
-        const desc = tx.description?.toLowerCase() || "";
-        return (txType.includes("level benefit") || txType.includes("level bonus") || tx.benefit_type?.toLowerCase().includes("level income")) &&
-          !txType.includes("roi") && !desc.includes("roi") &&
-          !txType.includes("referral") && !desc.includes("referral") &&
-          tx.status === "Completed";
+        const txType = (tx.transaction_type || "").toLowerCase();
+        const desc = (tx.description || "").toLowerCase();
+        const benefit = (tx.benefit_type || "").toLowerCase();
+
+        const isProductLevel = (
+          desc.includes("product level") ||
+          txType.includes("product level") ||
+          desc.includes("level benefit") ||
+          desc.includes("level bonus") ||
+          txType.includes("level benefit") ||
+          txType.includes("level bonus") ||
+          benefit.includes("level income")
+        );
+
+        const isExcluded = (
+          desc.includes("roi") ||
+          txType.includes("roi") ||
+          desc.includes("referral") ||
+          txType.includes("referral") ||
+          desc.includes("daily incentive") ||
+          txType.includes("daily incentive")
+        );
+
+        return isProductLevel && !isExcluded && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
 
     const roiLevelBenefits = nonLoanTransactions
       .filter(tx =>
         (tx.transaction_type === "ROI Level Benefit" || tx.transaction_type === "Level Daily ROI") &&
         tx.status === "Completed"
       )
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
 
     const directBenefits = nonLoanTransactions
       .filter(tx => {
@@ -171,7 +195,7 @@ const getWalletOverview = async (req, res) => {
           txType.includes("referral") || desc.includes("referral")) &&
           tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
 
     // Repayment Commission calculation
     const repaymentCommission = nonLoanTransactions
@@ -182,7 +206,7 @@ const getWalletOverview = async (req, res) => {
           tx.description === "Repayment commission") &&
         tx.status === "Completed"
       )
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0), 0);
 
     // Get pending withdrawals for transparency
     const pendingWithdrawals = nonLoanTransactions
@@ -194,7 +218,7 @@ const getWalletOverview = async (req, res) => {
         tx.transaction_type === "ROI Payout" &&
         tx.status === "Completed"
       )
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
 
     const singleLineIncome = nonLoanTransactions
       .filter(tx =>
@@ -206,7 +230,7 @@ const getWalletOverview = async (req, res) => {
           tx.description?.toLowerCase().includes("daily incentive")) &&
         tx.status === "Completed"
       )
-      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || ((parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.tw_credit) || 0)) || parseFloat(tx.ew_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || ((parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.tw_credit) || 0)) || parseFloat(tx.vw_credit) || parseFloat(tx.ew_credit) || 0), 0);
 
 
     // Calculate loan amounts separately (for information only)
@@ -314,6 +338,8 @@ const getWalletOverview = async (req, res) => {
         fixedDepositBalance: (member.fixed_deposit_wallet || 0).toFixed(2),
         // Vendor Wallet
         vendorWalletBalance: (member.vendor_wallet || 0).toFixed(2),
+        // Product Level Wallet (Strictly Product Level Income transactions)
+        productLevelBalance: levelBenefits.toFixed(2),
         topUpTransactions: topUpTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         fixedDepositTransactions: transactions.filter(tx => (parseFloat(tx.fd_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('fixed deposit'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         purchaseTransactions: transactions.filter(tx => (parseFloat(tx.pw_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('purchase'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
@@ -1297,8 +1323,9 @@ const getVendorWalletOverview = async (req, res) => {
       $or: [
         { transaction_type: { $regex: /vendor/i } },
         { description: { $regex: /vendor/i } },
-        { vw_credit: { $exists: true, $ne: "" } },
-        { vw_debit: { $exists: true, $ne: "" } }
+        { transaction_type: { $in: ["Daily Incentive", "Level Bonus", "Referral Bonus", "Level Daily ROI", "ROI Payout", "Global Income"] } },
+        { vw_credit: { $exists: true, $nin: ["", "0", 0, null] } },
+        { vw_debit: { $exists: true, $nin: ["", "0", 0, null] } }
       ]
     }).sort({ createdAt: -1, transaction_date: -1 });
 
@@ -1313,7 +1340,7 @@ const getVendorWalletOverview = async (req, res) => {
       .reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
 
     const totalIncome = transactions
-      .filter(tx => (parseFloat(tx.vw_credit) > 0 || (!tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")))
+      .filter(tx => (parseFloat(tx.vw_credit) > 0 || (!tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed" && (parseFloat(tx.vw_credit) > 0 || parseFloat(tx.net_amount) > 0))))
       .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || parseFloat(tx.net_amount) || 0), 0);
 
     return res.status(200).json({
@@ -1434,6 +1461,258 @@ const vendorWalletWithdraw = async (req, res) => {
   }
 };
 
+/**
+ * Product Level Wallet Overview
+ * Strictly fetches and computes Product Level Income transactions & dedicated withdrawals
+ */
+const getProductLevelWalletOverview = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+
+    const member = await MemberModel.findOne({
+      $or: [{ Member_id: memberId }, { member_id: memberId }]
+    });
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const actualMemberId = member.Member_id || memberId;
+    const numericPart = parseInt(actualMemberId.replace(/[^0-9]/g, ''), 10);
+    const pad5 = !isNaN(numericPart) ? String(numericPart).padStart(5, '0') : actualMemberId;
+    const pad6 = !isNaN(numericPart) ? String(numericPart).padStart(6, '0') : actualMemberId;
+
+    const possibleIds = Array.from(new Set([
+      actualMemberId,
+      actualMemberId.replace('BMS', ''),
+      `BMS${pad5}`,
+      `BMS${pad6}`,
+      pad5,
+      pad6,
+      !isNaN(numericPart) ? `BMS${numericPart}` : actualMemberId
+    ].filter(Boolean)));
+
+    const allTxs = await TransactionModel.find({
+      member_id: { $in: possibleIds }
+    }).sort({ createdAt: -1, transaction_date: -1 });
+
+    const transactions = allTxs.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+      const benefit = (tx.benefit_type || "").toLowerCase();
+
+      const isProductLevelIncome = (
+        desc.includes("product level") ||
+        txType.includes("product level") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        benefit.includes("level income")
+      );
+
+      const isProductLevelWithdrawal = (
+        txType.includes("product level withdrawal") ||
+        (desc.includes("product level") && (txType.includes("withdrawal") || desc.includes("withdrawal")))
+      );
+
+      const isExcluded = (
+        desc.includes("roi") ||
+        txType.includes("roi") ||
+        desc.includes("referral") ||
+        txType.includes("referral") ||
+        desc.includes("daily incentive") ||
+        txType.includes("daily incentive") ||
+        txType === "vendor withdrawal"
+      );
+
+      return (isProductLevelIncome || isProductLevelWithdrawal) && !isExcluded;
+    });
+
+    const totalIncome = transactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return !txType.includes("withdrawal") && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
+
+    const completedWithdrawals = transactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return txType.includes("withdrawal") && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const pendingWithdrawals = transactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return txType.includes("withdrawal") && (tx.status === "Pending" || tx.status === "Processing");
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const productLevelBalance = Math.max(0, totalIncome - completedWithdrawals - pendingWithdrawals);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        balance: productLevelBalance.toFixed(2),
+        productLevelBalance: productLevelBalance.toFixed(2),
+        totalIncome: totalIncome.toFixed(2),
+        totalWithdrawal: completedWithdrawals.toFixed(2),
+        pendingWithdrawals: pendingWithdrawals.toFixed(2),
+        transactionsCount: transactions.length,
+        transactions: transactions
+      }
+    });
+  } catch (error) {
+    console.error("Error in getProductLevelWalletOverview:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+/**
+ * Product Level Wallet Withdrawal
+ * Exclusively handles withdrawals from Product Level Income
+ */
+const productLevelWalletWithdraw = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    const { amount } = req.body;
+
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+    if (!amount) {
+      return res.status(400).json({ success: false, message: "Withdrawal amount is required" });
+    }
+
+    const withdrawalAmount = parseFloat(amount);
+    if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
+    }
+
+    const member = await MemberModel.findOne({
+      $or: [{ Member_id: memberId }, { member_id: memberId }]
+    });
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const actualMemberId = member.Member_id || memberId;
+
+    const allTxs = await TransactionModel.find({
+      member_id: actualMemberId
+    });
+
+    const levelTxs = allTxs.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+      const benefit = (tx.benefit_type || "").toLowerCase();
+
+      const isProductLevelIncome = (
+        desc.includes("product level") ||
+        txType.includes("product level") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        benefit.includes("level income")
+      );
+      const isProductLevelWithdrawal = (
+        txType.includes("product level withdrawal") ||
+        (desc.includes("product level") && (txType.includes("withdrawal") || desc.includes("withdrawal")))
+      );
+      const isExcluded = (
+        desc.includes("roi") ||
+        txType.includes("roi") ||
+        desc.includes("referral") ||
+        txType.includes("referral") ||
+        desc.includes("daily incentive") ||
+        txType.includes("daily incentive") ||
+        txType === "vendor withdrawal"
+      );
+
+      return (isProductLevelIncome || isProductLevelWithdrawal) && !isExcluded;
+    });
+
+    const totalIncome = levelTxs
+      .filter(tx => !tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
+
+    const completedWithdrawals = levelTxs
+      .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const pendingWithdrawals = levelTxs
+      .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && (tx.status === "Pending" || tx.status === "Processing"))
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const currentBalance = Math.max(0, totalIncome - completedWithdrawals - pendingWithdrawals);
+
+    if (withdrawalAmount > currentBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient Product Level balance. Available: ₹${currentBalance.toFixed(2)}`
+      });
+    }
+
+    // 10% standard deduction
+    const deduction = withdrawalAmount * 0.10;
+    const netAmount = withdrawalAmount - deduction;
+
+    const newTransactionId = await generateTransactionId("PL_WTH");
+
+    const newTransaction = new TransactionModel({
+      transaction_id: newTransactionId,
+      transaction_date: new Date(),
+      member_id: actualMemberId,
+      description: "Product Level Income Withdrawal Request",
+      transaction_type: "Product Level Withdrawal",
+      vw_credit: 0,
+      vw_debit: 0,
+      ew_credit: 0,
+      ew_debit: withdrawalAmount,
+      status: "Pending",
+      deduction: deduction,
+      net_amount: netAmount,
+      gross_amount: withdrawalAmount
+    });
+
+    await newTransaction.save();
+
+    const newBalance = Math.max(0, currentBalance - withdrawalAmount);
+
+    return res.status(200).json({
+      success: true,
+      message: "Product Level Income withdrawal request submitted successfully",
+      data: {
+        transactionId: newTransaction.transaction_id,
+        withdrawalDetails: {
+          grossAmount: withdrawalAmount.toFixed(2),
+          deduction: deduction.toFixed(2),
+          netAmount: netAmount.toFixed(2),
+          deductionRate: "10%"
+        },
+        balanceDetails: {
+          previousBalance: currentBalance.toFixed(2),
+          withdrawalAmount: withdrawalAmount.toFixed(2),
+          newAvailableBalance: newBalance.toFixed(2)
+        },
+        status: "Pending"
+      }
+    });
+  } catch (error) {
+    console.error("Error in productLevelWalletWithdraw:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during product level wallet withdrawal",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getWalletOverview,
   getWalletWithdraw,
@@ -1444,5 +1723,7 @@ module.exports = {
   transferP2PWallet,
   getMemberWithdrawalLimits,
   getVendorWalletOverview,
-  vendorWalletWithdraw
+  vendorWalletWithdraw,
+  getProductLevelWalletOverview,
+  productLevelWalletWithdraw
 };
