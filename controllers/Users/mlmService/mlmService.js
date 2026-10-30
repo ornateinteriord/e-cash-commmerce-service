@@ -369,7 +369,7 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       member_id: memberId,
       Name: sponsor_name,
       mobileno: sponsor_mobileno,
-      reference_no: payoutId.toString(),
+      reference_no: (payout_id || '').toString(),
       description: payout_type,
       transaction_type: payout_type.includes('Referral Bonus') ? "Referral Bonus" : "Product Level Income",
       vw_credit: commissionAmount.toString(),
@@ -384,7 +384,7 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       benefit_type: level === 1 ? "direct" : "indirect",
       related_member_id: new_member_id,
       related_member_name: new_member_name,
-      related_payout_id: payoutId
+      related_payout_id: payout_id
     });
 
     await transaction.save({ session });

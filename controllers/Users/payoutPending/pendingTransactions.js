@@ -75,7 +75,7 @@ const approveWithdrawal = async (req, res) => {
       data: {
         transactionId: transaction.transaction_id,
         memberId: transaction.member_id,
-        amount: transaction.ew_debit,
+        amount: parseFloat(transaction.vw_debit) || parseFloat(transaction.ew_debit) || parseFloat(transaction.gross_amount) || 0,
         status: transaction.status
       }
     });
