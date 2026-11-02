@@ -91,7 +91,11 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const daysToProcess = [];
 
                 while (dateCursor.isSameOrBefore(todayMoment) && (currentCount + daysToProcess.length) < targetDays) {
-                    daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
+                    const dayOfWeek = dateCursor.day(); // 0 = Sunday, 6 = Saturday
+                    // Skip Saturday and Sunday (weekdays Monday-Friday only)
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
+                    }
                     dateCursor.add(1, "days");
                 }
 
@@ -233,7 +237,11 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const daysToProcess = [];
 
                 while (dateCursor.isSameOrBefore(todayMoment) && (currentCount + daysToProcess.length) < targetDays) {
-                    daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
+                    const dayOfWeek = dateCursor.day(); // 0 = Sunday, 6 = Saturday
+                    // Skip Saturday and Sunday (weekdays Monday-Friday only)
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
+                    }
                     dateCursor.add(1, "days");
                 }
 
@@ -362,7 +370,11 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const daysToProcess = [];
 
                 while (dateCursor.isSameOrBefore(todayMoment) && (currentCount + daysToProcess.length) < targetDays) {
-                    daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
+                    const dayOfWeek = dateCursor.day(); // 0 = Sunday, 6 = Saturday
+                    // Skip Saturday and Sunday (weekdays Monday-Friday only)
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
+                    }
                     dateCursor.add(1, "days");
                 }
 
