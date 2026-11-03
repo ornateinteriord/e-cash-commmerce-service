@@ -92,6 +92,21 @@ const findUplineSponsors = async (memberId, maxLevels = 15) => {
     }
     visited.add(sponsorActualId);
 
+    // Calculate direct referrals count (array length or direct query fallback)
+    let directCount = 0;
+    if (Array.isArray(sponsor.direct_referrals) && sponsor.direct_referrals.length > 0) {
+      directCount = sponsor.direct_referrals.length;
+    } else {
+      directCount = await MemberModel.countDocuments({
+        $or: [
+          { sponsor_id: sponsor.Member_id },
+          { sponsor_id: sponsor.member_id },
+          { Sponsor_code: sponsor.member_code },
+          { Sponsor_code: sponsor.Member_id }
+        ]
+      });
+    }
+
     level++;
     uplineSponsors.push({
       level: level,
@@ -101,7 +116,8 @@ const findUplineSponsors = async (memberId, maxLevels = 15) => {
       sponsor_mobileno: sponsor.mobileno || sponsor.contactno,
       sponsored_member_id: currentMemberId, // The member who triggered this commission
       sponsor_status: sponsor.status,
-      sponsor_level: Number(sponsor.level) || 0
+      sponsor_level: Number(sponsor.level) || 0,
+      direct_referrals_count: directCount
     });
 
     // Move up the chain
@@ -176,16 +192,18 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
       // --- 2. Calculate Level Benefits Income (Level 2 to 10) ---
       const levelPercentage = levelBenefitsPercentages[upline.level] || 0;
       if (levelPercentage > 0 && upline.level > 1) {
+        const directCount = Number(upline.direct_referrals_count) || 0;
+
         // Eligibility rule:
-        // - Level 2, 3, 4, 5: Member level must be at least 4 (>= 4). Otherwise skip.
-        // - Level 6, 7, 8, 9, 10: Member level must be at least 8 (>= 8). Otherwise skip.
-        if (upline.level >= 2 && upline.level <= 5 && sponsorLevel < 4) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has level ${sponsorLevel} (Requires Level >= 4). Commission skipped.`);
+        // - For 5 level commission (Level 2 to 5): min 4 direct compulsory
+        // - For 10 level commission (Level 6 to 10): min 8 direct compulsory
+        if (upline.level >= 2 && upline.level <= 5 && directCount < 4) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has ${directCount} direct referrals (Requires min 4 direct). Commission skipped.`);
           continue;
         }
 
-        if (upline.level >= 6 && upline.level <= 10 && sponsorLevel < 8) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has level ${sponsorLevel} (Requires Level >= 8). Commission skipped.`);
+        if (upline.level >= 6 && upline.level <= 10 && directCount < 8) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has ${directCount} direct referrals (Requires min 8 direct). Commission skipped.`);
           continue;
         }
 
@@ -266,6 +284,33 @@ const processCommissions = async (commissions, session = null) => {
             sponsor_id: commission.sponsor_id,
             sponsor_name: commission.sponsor_name,
             error: `Sponsor level ${sponsorLevel} is not eligible for Level ${commission.level} commission (Requires Level >= 8)`
+          });
+          continue;
+        }
+
+        // Prevent duplicate commission for the same buyer, level and amount processed within the last 10 minutes
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        const existingRecentTx = await TransactionModel.findOne({
+          member_id: { $in: [commission.sponsor_id, commission.Sponsor_code].filter(Boolean) },
+          level: commission.level,
+          $or: [
+            { related_member_id: commission.new_member_id },
+            { related_member_name: commission.new_member_name },
+            { description: new RegExp(`member ${commission.new_member_id}`, 'i') }
+          ],
+          $or: [
+            { createdAt: { $gte: tenMinutesAgo } },
+            { transaction_date: { $gte: tenMinutesAgo.toISOString().split('T')[0] } }
+          ]
+        }).session(session);
+
+        if (existingRecentTx) {
+          console.warn(`⚠️ [DUPLICATE BLOCKED] Commission already processed recently for sponsor ${commission.sponsor_id} from ${commission.new_member_id} at Level ${commission.level}. Skipping duplicate.`);
+          results.push({
+            success: false,
+            level: commission.level,
+            sponsor_id: commission.sponsor_id,
+            error: "Duplicate commission already processed recently"
           });
           continue;
         }
@@ -360,7 +405,7 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
     // Use a unique compound ID to ensure consistency and speed in high-concurrency 
     const newTransactionId = `T-L-${payout_id}-${Math.floor(Math.random() * 1000)}`;
 
-    // 100% Vendor Sale Value Wallet (vendor_wallet / vw_credit)
+    const isReferral = payout_type.includes('Referral Bonus') || level === 1;
     const commissionAmount = Number(amount.toFixed(2));
 
     const transaction = new TransactionModel({
@@ -371,13 +416,13 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       mobileno: sponsor_mobileno,
       reference_no: (payout_id || '').toString(),
       description: payout_type,
-      transaction_type: payout_type.includes('Referral Bonus') ? "Referral Bonus" : "Product Level Income",
-      vw_credit: commissionAmount.toString(),
-      ew_credit: "0",
+      transaction_type: isReferral ? "Referral Bonus" : "Product Level Income",
+      vw_credit: "0",
+      ew_credit: isReferral ? commissionAmount.toString() : "0",
+      pw_credit: !isReferral ? commissionAmount.toString() : "0",
       tw_credit: "0",
       uw_credit: "0",
       fd_credit: "0",
-      pw_credit: "0",
       ew_debit: "0",
       status: "Completed",
       level: level,
@@ -389,16 +434,18 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
 
     await transaction.save({ session });
 
-    // Add full commission amount to sponsor's vendor sale value wallet
-    await MemberModel.findOneAndUpdate(
-      { Member_id: memberId },
-      { 
-        $inc: {
-          vendor_wallet: commissionAmount
-        } 
-      },
-      { session }
-    );
+    // Level 1 Referral Bonus goes to Earning Wallet
+    if (isReferral) {
+      await MemberModel.findOneAndUpdate(
+        { Member_id: memberId },
+        { 
+          $inc: {
+            earning_wallet: commissionAmount
+          } 
+        },
+        { session }
+      );
+    }
 
 return transaction;
 
@@ -463,9 +510,10 @@ const getUplineTree = async (memberIdOrReq, maxLevelsOrRes = 15) => {
 
       const isActive = String(u.sponsor_status || "").toLowerCase() === "active";
       const sponsorLvl = Number(u.sponsor_level) || 0;
+      const directCount = Number(u.direct_referrals_count) || 0;
       let eligible = isActive;
-      if (u.level >= 2 && u.level <= 5 && sponsorLvl < 4) eligible = false;
-      if (u.level >= 6 && u.level <= 10 && sponsorLvl < 8) eligible = false;
+      if (u.level >= 2 && u.level <= 5 && directCount < 4) eligible = false;
+      if (u.level >= 6 && u.level <= 10 && directCount < 8) eligible = false;
 
       return {
         level: u.level,
@@ -474,6 +522,7 @@ const getUplineTree = async (memberIdOrReq, maxLevelsOrRes = 15) => {
         member_code: u.Sponsor_code,
         status: u.sponsor_status,
         member_level: sponsorLvl,
+        direct_referrals_count: directCount,
         commission_rate: rate,
         eligible: eligible
       };
@@ -497,8 +546,8 @@ const getCommissionSummary = () => {
     total_levels: 10,
     referral_rates: referralCommissionPercentages,
     level_rates: levelBenefitsPercentages,
-    // roi_rates: roiCommissionPercentages, // Disabled as per user request (NO ROI)
-    condition: "Level 1: Active status required. Level 2-5: Active status & Member Level >= 4 required. Level 6-10: Active status & Member Level >= 8 required."
+    level_roi_rates: levelRoiPercentages,
+    condition: "Level 1: Active status required. Level 2-5: Active status & min 4 direct compulsory. Level 6-10: Active status & min 8 direct compulsory. Level ROI (100 days): Level 1-7 for vendors completed 3X business / 3 levels."
   };
 };
 
@@ -691,14 +740,14 @@ const distributeROICommission = async (memberId, roiAmount, session = null, cust
 };
 
 /**
- * Creates 50-day Level ROI schedules for upline sponsors up to 7 levels.
- * Eligibility: Sponsor must be active AND have rank level >= 3.
+ * Creates 100-day Level ROI schedules for upline sponsors up to 7 levels.
+ * Eligibility: Sponsor must be active AND completed 3X business / 3 levels (rank level >= 3).
  * 
  * Rates:
- * Level 1: 10% total over 50 days (0.20%/day)
- * Level 2: 3% total over 50 days (0.06%/day)
- * Level 3: 2% total over 50 days (0.04%/day)
- * Level 4 to 7: 1% total over 50 days (0.02%/day each)
+ * Level 1: 10% total over 100 days (0.10%/day)
+ * Level 2: 3% total over 100 days (0.03%/day)
+ * Level 3: 2% total over 100 days (0.02%/day)
+ * Level 4 to 7: 1% total over 100 days (0.01%/day each)
  * 
  * @param {string} newMemberId - The newly activated member
  * @param {number} packageAmount - The package investment amount
@@ -735,14 +784,14 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       const isActive = String(upline.sponsor_status || "").toLowerCase() === "active";
       const sponsorRank = Number(upline.sponsor_level) || 0;
 
-      // Condition: Active AND Rank Level >= 3 (applies to all 7 levels)
+      // Condition: Active AND completed 3X business / 3 levels (sponsorRank >= 3)
       if (!isActive) {
-        console.log(`⏭️ [50-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is inactive.`);
+        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is inactive.`);
         continue;
       }
 
       if (sponsorRank < 3) {
-        console.log(`⏭️ [50-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Rank Level ${sponsorRank} (Requires Level >= 3).`);
+        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Rank Level ${sponsorRank} (Requires 3X business / Level >= 3).`);
         continue;
       }
 
@@ -750,7 +799,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       if (percentage <= 0) continue;
 
       const totalAmount = Number(((packageAmount * percentage) / 100).toFixed(2));
-      const dailyAmount = Number((totalAmount / 50).toFixed(2));
+      const dailyAmount = Number((totalAmount / 100).toFixed(2));
 
       if (dailyAmount <= 0) continue;
 
@@ -768,7 +817,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         total_percentage: percentage,
         total_amount: totalAmount,
         daily_amount: dailyAmount,
-        target_days: 50,
+        target_days: 100,
         payout_count: 0,
         total_paid: 0,
         status: "Active",
@@ -778,12 +827,12 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       await schedule.save();
       createdSchedules.push(schedule);
 
-      console.log(`✅ [50-Day Level ROI Registered] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) will receive ₹${dailyAmount}/day for 50 days (Total ₹${totalAmount}, ${percentage}% of ₹${packageAmount})`);
+      console.log(`✅ [100-Day Level ROI Registered] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) will receive ₹${dailyAmount}/day for 100 days (Total ₹${totalAmount}, ${percentage}% of ₹${packageAmount})`);
     }
 
     return createdSchedules;
   } catch (error) {
-    console.error("❌ Error creating 50-day Level ROI schedules:", error);
+    console.error("❌ Error creating 100-day Level ROI schedules:", error);
     return [];
   }
 };

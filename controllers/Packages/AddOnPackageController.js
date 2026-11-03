@@ -535,8 +535,8 @@ const buyPackageDirectly = async (req, res) => {
       targetMember.status = "active";
       targetMember.roi_status = "Active";
       targetMember.roi_payout_count = 0;
-      targetMember.roi_payout_target = 200;
-      targetMember.roi_daily_amount = Math.round(Number(requested_amount) * 0.01 * 100) / 100;
+      targetMember.roi_payout_target = 400;
+      targetMember.roi_daily_amount = Math.round(Number(requested_amount) * 0.005 * 100) / 100;
       targetMember.roi_total_paid = 0;
       if (targetMember.level === undefined || targetMember.level === null) {
         targetMember.level = 0;
@@ -553,7 +553,7 @@ const buyPackageDirectly = async (req, res) => {
         amount: requested_amount,
         roi_status: "Active",
         roi_payout_count: 0,
-        roi_payout_target: 200,
+        roi_payout_target: 400,
         roi_start_date: todayStr,
         roi_last_payout_date: null,
         request_id: request_id,

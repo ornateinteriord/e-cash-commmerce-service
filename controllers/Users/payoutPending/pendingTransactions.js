@@ -120,6 +120,11 @@ const rejectWithdrawal = async (req, res) => {
           { $or: [{ Member_id: transaction.member_id }, { member_id: transaction.member_id }] },
           { $inc: { vendor_wallet: refundAmount } }
         );
+      } else if (transaction.transaction_type === "Earning Withdrawal") {
+        await MemberModel.findOneAndUpdate(
+          { $or: [{ Member_id: transaction.member_id }, { member_id: transaction.member_id }] },
+          { $inc: { earning_wallet: refundAmount } }
+        );
       } else {
         await MemberModel.findOneAndUpdate(
           { $or: [{ Member_id: transaction.member_id }, { member_id: transaction.member_id }] },

@@ -60,7 +60,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const pkgAmount = Number(member.package_value) || 0;
                 if (pkgAmount <= 0) continue;
 
-                const targetDays = member.roi_payout_target || 200;
+                const targetDays = member.roi_payout_target || 400;
                 let currentCount = member.roi_payout_count || 0;
 
                 if (currentCount >= targetDays) {
@@ -205,7 +205,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const pkgAmount = Number(addon.amount) || 0;
                 if (pkgAmount <= 0) continue;
 
-                const targetDays = addon.roi_payout_target || 200;
+                const targetDays = addon.roi_payout_target || 400;
                 let currentCount = addon.roi_payout_count || 0;
 
                 if (currentCount >= targetDays) {

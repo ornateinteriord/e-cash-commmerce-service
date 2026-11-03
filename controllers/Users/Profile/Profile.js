@@ -271,9 +271,9 @@ const activateMemberPackage = async (req, res) => {
         upgrade_status: "Active", // Activated with package
         Date_of_joining: activationDate,
         roi_status: "Active",
-        roi_payout_target: 200,
+        roi_payout_target: 400,
         roi_payout_count: 0,
-        roi_daily_amount: Math.round(amount * 0.01 * 100) / 100,
+        roi_daily_amount: Math.round(amount * 0.005 * 100) / 100,
         roi_total_paid: 0,
         roi_start_date: activationDate,
         roi_last_payout_date: null,

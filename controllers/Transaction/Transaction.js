@@ -26,13 +26,19 @@ const getTransactionDetails = async (req, res) => {
 
     if (type && type !== "all") {
       if (type.toLowerCase() === "withdrawal") {
-        query.transaction_type = "Withdrawal";
+        query.$or = [
+          { transaction_type: { $regex: /withdrawal/i } },
+          { description: { $regex: /withdrawal/i } }
+        ];
       } else if (type.toLowerCase() === "credits" || type.toLowerCase() === "credit") {
         query.$and = [
           {
             $or: [
               { ew_credit: { $nin: ["0", "0.00", 0, null, ""] } },
               { ew_debit: { $nin: ["0", "0.00", 0, null, ""] } },
+              { vw_credit: { $nin: ["0", "0.00", 0, null, ""] } },
+              { vw_debit: { $nin: ["0", "0.00", 0, null, ""] } },
+              { pw_credit: { $nin: ["0", "0.00", 0, null, ""] } },
               {
                 transaction_type: {
                   $regex: /credit|deposit|load|withdraw|activat|package|daily|incentive|single|level|referral|direct|p2p|transfer|commission|benefit|roi/i
@@ -107,7 +113,7 @@ const getTransactionDetails = async (req, res) => {
           extracted_related_id: 0
         }
       },
-      { $sort: { createdAt: -1 } } // Sort by date descending
+      { $sort: { createdAt: -1, transaction_date: -1 } } // Sort by date descending
     ]);
 
     if (!transactions.length) {
@@ -168,9 +174,3 @@ const getTransactionDetails = async (req, res) => {
 };
 
 module.exports = getTransactionDetails;
-
-    // const today = new Date();
-    // const dayOfWeek = today.getDay(); 
-    // const isSaturday = true;
-    // const isRepayEnabled = true;
-   

@@ -41,7 +41,7 @@ const MemberSchema = new mongoose.Schema(
     member_code: { type: String },
     roi_status: { type: String, enum: ["Active", "Completed", "Pending"], default: "Pending" },
     roi_payout_count: { type: Number, default: 0 },
-    roi_payout_target: { type: Number, default: 0 },
+    roi_payout_target: { type: Number, default: 400 },
     roi_last_payout_date: { type: String },
     roi_start_date: { type: String },
     upgrade_package: { type: String },
@@ -90,6 +90,7 @@ const MemberSchema = new mongoose.Schema(
     purchase_wallet: { type: Number, default: 0, set: v => Math.round(v * 10000) / 10000 },
     global_income: { type: Number, default: 0, set: v => Math.round(v * 10000) / 10000 },
     vendor_wallet: { type: Number, default: 0, set: v => Math.round(v * 10000) / 10000 },
+    earning_wallet: { type: Number, default: 0, set: v => Math.round(v * 10000) / 10000 },
     qr_code: { type: String, unique: true, sparse: true },
 
     // NIDHI SPECIFIC FIELDS (Lowercase mappings)

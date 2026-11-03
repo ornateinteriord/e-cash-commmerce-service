@@ -10,9 +10,9 @@ const { getSponsers, checkSponsorReward } = require("../controllers/Users/Sponse
 const { getMultiLevelSponsorship } = require("../controllers/Users/Sponser/multiLevelSponsorship");
 const { createTicket, getTickets } = require("../controllers/Users/Ticket/TicketConntroller");
 const Authenticated = require("../middlewares/auth");
-const {  triggerMLMCommissions, getMemberCommissionSummary, getDailyPayout, climeRewardLoan, repaymentLoan, getROIBenefits, triggerUserROI, getLevelRoiSchedules } = require("../controllers/Users/Payout/PayoutController");
+const {  triggerMLMCommissions, getMemberCommissionSummary, getDailyPayout, climeRewardLoan, repaymentLoan, getROIBenefits, triggerUserROI, getLevelRoiSchedules, cleanDuplicateReferralBonus } = require("../controllers/Users/Payout/PayoutController");
 const { getPendingTransactions, approveWithdrawal, rejectWithdrawal } = require("../controllers/Users/payoutPending/pendingTransactions");
-const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet, getVendorWalletOverview, vendorWalletWithdraw, getProductLevelWalletOverview, productLevelWalletWithdraw } = require("../controllers/Users/walletServiece/walletServies");
+const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet, getVendorWalletOverview, vendorWalletWithdraw, getEarningWalletOverview, earningWalletWithdraw, getProductLevelWalletOverview, productLevelWalletWithdraw } = require("../controllers/Users/walletServiece/walletServies");
 const { getMemberCommissionTransactions } = require("../controllers/Member");
 const { getUplineTree } = require("../controllers/Users/mlmService/mlmService");
 
@@ -45,6 +45,9 @@ router.get("/check-sponsor-reward/:memberId", Authenticated, checkSponsorReward)
 router.get("/check-sponsor-reward", Authenticated, checkSponsorReward);
 router.get("/commissions/summary/:member_id", Authenticated, getMemberCommissionSummary);
 router.get("/trigger-commissions", triggerMLMCommissions);
+router.post("/trigger-commissions", triggerMLMCommissions);
+router.get("/clean-duplicate-bonus", cleanDuplicateReferralBonus);
+router.get("/clean-duplicate-bonus/:txId", cleanDuplicateReferralBonus);
 
 
 router.get("/overview/:memberId", Authenticated, getWalletOverview);
@@ -60,6 +63,10 @@ router.put('/reject-withdrawal/:transaction_id', Authenticated, rejectWithdrawal
 // Vendor Wallet Routes (Separate functions)
 router.get("/vendor-wallet/overview/:memberId", Authenticated, getVendorWalletOverview);
 router.post("/vendor-wallet/withdraw/:memberId", Authenticated, vendorWalletWithdraw);
+
+// Earning Wallet Routes (Strictly Referral & Level MLM Incomes)
+router.get("/earning-wallet/overview/:memberId", Authenticated, getEarningWalletOverview);
+router.post("/earning-wallet/withdraw/:memberId", Authenticated, earningWalletWithdraw);
 
 // Product Level Wallet Routes (Strictly Product Level Income)
 router.get("/product-level-wallet/overview/:memberId", Authenticated, getProductLevelWalletOverview);

@@ -90,7 +90,7 @@ const checkAndUpdateSponsorLevel = async (sponsorIdentifier) => {
 
     // 4. Calculate eligible level based on multiplier
     let eligibleLevel = 0;
-    let targetDays = 200;
+    let targetDays = 400;
 
     if (totalDirectInvestment >= 8 * sponsorTotalInvestment) {
       eligibleLevel = 8;

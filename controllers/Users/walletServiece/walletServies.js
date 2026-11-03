@@ -98,8 +98,6 @@ const getWalletOverview = async (req, res) => {
       `BMS${numericPart}`
     ];
 
-
-
     const transactions = await TransactionModel.find({
       member_id: { $in: possibleIds }
     });
@@ -164,7 +162,8 @@ const getWalletOverview = async (req, res) => {
           desc.includes("level bonus") ||
           txType.includes("level benefit") ||
           txType.includes("level bonus") ||
-          benefit.includes("level income")
+          benefit.includes("level income") ||
+          parseFloat(tx.pw_credit) > 0
         );
 
         const isExcluded = (
@@ -178,7 +177,7 @@ const getWalletOverview = async (req, res) => {
 
         return isProductLevel && !isExcluded && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0), 0);
 
     const roiLevelBenefits = nonLoanTransactions
       .filter(tx =>
@@ -195,7 +194,7 @@ const getWalletOverview = async (req, res) => {
           txType.includes("referral") || desc.includes("referral")) &&
           tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0) || (parseFloat(tx.amount) || 0), 0);
 
     // Repayment Commission calculation
     const repaymentCommission = nonLoanTransactions
@@ -232,7 +231,6 @@ const getWalletOverview = async (req, res) => {
       )
       .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || ((parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.tw_credit) || 0)) || parseFloat(tx.vw_credit) || parseFloat(tx.ew_credit) || 0), 0);
 
-
     // Calculate loan amounts separately (for information only)
     const loanTransactions = transactions.filter(tx =>
       tx.transaction_type?.toLowerCase().includes('loan') ||
@@ -265,7 +263,6 @@ const getWalletOverview = async (req, res) => {
     );
 
     sliTransactions.forEach(tx => {
-      // Extract amount from description e.g., "Single Leg Income (₹30) from U000002"
       const match = tx.description?.match(/\(\₹([\d.]+)\)/);
       if (match && match[1]) {
         const pkgVal = parseFloat(match[1]);
@@ -338,12 +335,13 @@ const getWalletOverview = async (req, res) => {
         fixedDepositBalance: (member.fixed_deposit_wallet || 0).toFixed(2),
         // Vendor Wallet
         vendorWalletBalance: (member.vendor_wallet || 0).toFixed(2),
+        // Earning Wallet
+        earningWalletBalance: (member.earning_wallet || 0).toFixed(2),
         // Product Level Wallet (Strictly Product Level Income transactions)
         productLevelBalance: levelBenefits.toFixed(2),
         topUpTransactions: topUpTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         fixedDepositTransactions: transactions.filter(tx => (parseFloat(tx.fd_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('fixed deposit'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         purchaseTransactions: transactions.filter(tx => (parseFloat(tx.pw_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('purchase'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
-        // Loan information (for transparency)
         loanInfo: {
           totalLoanAmount: totalLoanCredits.toFixed(2),
           totalLoanRepaid: totalLoanDebits.toFixed(2),
@@ -366,19 +364,16 @@ const getWalletOverview = async (req, res) => {
 
 const getWalletWithdraw = async (req, res) => {
   try {
-    const { memberId, amount, otp } = req.body;
+    const { memberId, amount } = req.body;
 
     if (!memberId) return res.status(400).json({ success: false, message: "Member ID is required" });
     if (!amount) return res.status(400).json({ success: false, message: "Withdrawal amount is required" });
-    // OTP requirement bypassed for now:
-    // if (!otp) return res.status(400).json({ success: false, message: "OTP is required" });
 
     const withdrawalAmount = parseFloat(amount);
     if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) {
       return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
     }
 
-    // Check if member already requested a withdrawal today (One withdrawal per day)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -404,70 +399,33 @@ const getWalletWithdraw = async (req, res) => {
     const member = await MemberModel.findOne({ Member_id: memberId });
     if (!member) return res.status(404).json({ success: false, message: "Member not found" });
 
-    // OTP verification bypassed for now:
-    // if (!verifyOTP(member.email, otp)) {
-    //   return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
-    // }
-
-    // Calculate last Saturday
     const today = new Date();
     const lastSaturday = new Date(today);
-
-    const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-    // Correct calculation: go back to previous Saturday
+    const dayOfWeek = today.getDay();
     const daysSinceSaturday = dayOfWeek === 6 ? 0 : dayOfWeek + 1;
-
     lastSaturday.setDate(today.getDate() - daysSinceSaturday);
     lastSaturday.setHours(0, 0, 0, 0);
 
-    console.log("dayOfweek:", dayOfWeek);
-    console.log("daysSinceSaturday:", daysSinceSaturday);
-    console.log("lastSaturday:", lastSaturday.toISOString());
-
-    // Check if member has any ACTIVE LOAN (Approved with net_amount > 0)
     const activeLoan = await TransactionModel.findOne({
       member_id: memberId,
       transaction_type: { $regex: /loan/i },
       status: "Approved",
-      net_amount: { $gt: "0" } // Loan is still unpaid
+      net_amount: { $gt: "0" }
     });
 
-    console.log("Active Loan Found:", !!activeLoan);
-    if (activeLoan) {
-      console.log("Active Loan Details:", {
-        transaction_date: activeLoan.transaction_date,
-        net_amount: activeLoan.net_amount,
-        transaction_type: activeLoan.transaction_type
-      });
-    }
-
-    // Check if loan was taken BEFORE last Saturday
-    // New rule: if an active loan exists (net_amount > 0) AND the loan origination date is before lastSaturday
-    // then block withdrawal UNLESS there was a repayment on or after lastSaturday.
     let hasUnpaidLoan = false;
     let lastRepayment = null;
     if (activeLoan) {
       const loanDate = new Date(activeLoan.transaction_date);
-      console.log("Loan Date:", loanDate.toISOString());
-      console.log("Last Saturday:", lastSaturday.toISOString());
-
-      // Find the latest repayment (if any)
       lastRepayment = await TransactionModel.findOne({
         member_id: memberId,
         transaction_type: { $regex: /repay|repayment|loan repayment/i },
         status: { $in: ["Paid", "Completed", "Approved"] }
       }).sort({ transaction_date: -1 }).exec();
 
-      if (lastRepayment) {
-        console.log("Last repayment found:", lastRepayment.transaction_date);
-      }
-
       const unpaidNumeric = parseFloat(activeLoan.net_amount || "0") || 0;
-
-      // Block only if loan was taken before lastSaturday AND there was no repayment on/after lastSaturday AND unpaid amount > 0
       const repaidOnOrAfterLastSaturday = lastRepayment && (new Date(lastRepayment.transaction_date) >= lastSaturday);
       hasUnpaidLoan = loanDate < lastSaturday && unpaidNumeric > 0 && !repaidOnOrAfterLastSaturday;
-      console.log("Loan taken before last Saturday:", loanDate < lastSaturday, "unpaidNumeric:", unpaidNumeric, "repaidOnOrAfterLastSaturday:", repaidOnOrAfterLastSaturday, "hasUnpaidLoan:", hasUnpaidLoan);
     }
 
     const plainMemberId = memberId.startsWith('BMS') ? memberId.replace('BMS', '') : memberId;
@@ -513,6 +471,7 @@ const getWalletWithdraw = async (req, res) => {
         (tx.transaction_type?.toLowerCase().includes("level benefit") && Number(tx.level) === 1)
       )
       .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+
     const repaymentCommission = completedTransactions
       .filter(tx =>
         tx.transaction_type === "Repayment Commission" ||
@@ -527,8 +486,6 @@ const getWalletWithdraw = async (req, res) => {
         tx.transaction_type === "ROI Payout"
       )
       .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
-
-
 
     const limits = await getMemberWithdrawalLimits(member.Member_id || memberId);
 
@@ -557,7 +514,6 @@ const getWalletWithdraw = async (req, res) => {
       });
     }
 
-    // Check if member has unpaid loan from before last Saturday
     if (hasUnpaidLoan) {
       return res.status(400).json({
         success: false,
@@ -603,7 +559,7 @@ const getWalletWithdraw = async (req, res) => {
       });
     }
 
-    const deduction = withdrawalAmount * 0.10;
+    const deduction = withdrawalAmount * 0.05;
     const netAmount = withdrawalAmount - deduction;
 
     const newTransactionId = await generateTransactionId("WTH");
@@ -631,7 +587,6 @@ const getWalletWithdraw = async (req, res) => {
 
     await newTransaction.save();
 
-    // Deduct from member's wallet_balance field (sync with Available Balance)
     await MemberModel.findOneAndUpdate(
       { Member_id: memberId },
       { $inc: { wallet_balance: -withdrawalAmount } }
@@ -649,7 +604,7 @@ const getWalletWithdraw = async (req, res) => {
           grossAmount: withdrawalAmount.toFixed(2),
           deduction: deduction.toFixed(2),
           netAmount: netAmount.toFixed(2),
-          deductionRate: "10%"
+          deductionRate: "5%"
         },
         balanceDetails: {
           previousBalance: availableBalance.toFixed(2),
@@ -671,7 +626,7 @@ const getWalletWithdraw = async (req, res) => {
         },
         status: "Pending",
         calculation: {
-          deduction: `10% of ₹${withdrawalAmount.toFixed(2)} = ₹${deduction.toFixed(2)}`,
+          deduction: `5% of ₹${withdrawalAmount.toFixed(2)} = ₹${deduction.toFixed(2)}`,
           netAmount: `₹${withdrawalAmount.toFixed(2)} - ₹${deduction.toFixed(2)} = ₹${netAmount.toFixed(2)}`,
           balanceUpdate: `₹${availableBalance.toFixed(2)} - ₹${withdrawalAmount.toFixed(2)} = ₹${newAvailableBalance.toFixed(2)}`
         },
@@ -688,174 +643,17 @@ const getWalletWithdraw = async (req, res) => {
   }
 };
 
-
 const sendWithdrawalOTP = async (req, res) => {
-  try {
-    const { memberId, amount } = req.body;
+  return res.status(200).json({ success: true, message: "OTP bypassed for now" });
+};
 
-    if (!memberId) return res.status(400).json({ success: false, message: "Member ID is required" });
-    if (!amount) return res.status(400).json({ success: false, message: "Withdrawal amount is required" });
-
-    const withdrawalAmount = parseFloat(amount);
-    if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) {
-      return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
-    }
-
-    // Check if member already requested a withdrawal today (One withdrawal per day)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const existingWithdrawalToday = await TransactionModel.findOne({
-      member_id: memberId,
-      transaction_type: "Withdrawal",
-      status: { $in: ["Pending", "Approved", "Completed", "Processing"] },
-      $or: [
-        { transaction_date: { $gte: todayStart, $lte: todayEnd } },
-        { createdAt: { $gte: todayStart, $lte: todayEnd } }
-      ]
-    });
-
-    if (existingWithdrawalToday) {
-      return res.status(400).json({
-        success: false,
-        message: "You have already requested a withdrawal today. Only one withdrawal per day is allowed."
-      });
-    }
-
-    const member = await MemberModel.findOne({ Member_id: memberId });
-    if (!member) return res.status(404).json({ success: false, message: "Member not found" });
-
-    // Loan and balance logic
-    const today = new Date();
-    const lastSaturday = new Date(today);
-    const dayOfWeek = today.getDay();
-    const daysSinceSaturday = dayOfWeek === 6 ? 0 : dayOfWeek + 1;
-    lastSaturday.setDate(today.getDate() - daysSinceSaturday);
-    lastSaturday.setHours(0, 0, 0, 0);
-
-    const activeLoan = await TransactionModel.findOne({
-      member_id: memberId,
-      transaction_type: { $regex: /loan/i },
-      status: "Approved",
-      net_amount: { $gt: "0" }
-    });
-
-    let hasUnpaidLoan = false;
-    let lastRepayment = null;
-    if (activeLoan) {
-      const loanDate = new Date(activeLoan.transaction_date);
-      lastRepayment = await TransactionModel.findOne({
-        member_id: memberId,
-        transaction_type: { $regex: /repay|repayment|loan repayment/i },
-        status: { $in: ["Paid", "Completed", "Approved"] }
-      }).sort({ transaction_date: -1 }).exec();
-
-      const unpaidNumeric = parseFloat(activeLoan.net_amount || "0") || 0;
-      const repaidOnOrAfterLastSaturday = lastRepayment && (new Date(lastRepayment.transaction_date) >= lastSaturday);
-      hasUnpaidLoan = loanDate < lastSaturday && unpaidNumeric > 0 && !repaidOnOrAfterLastSaturday;
-    }
-
-    const numericPart = parseInt(memberId.replace('BMS', ''), 10);
-    const pad5 = String(numericPart).padStart(5, '0');
-    const pad6 = String(numericPart).padStart(6, '0');
-    const possibleIds = [memberId, memberId.replace('BMS', ''), `BMS${pad5}`, `BMS${pad6}`, pad5, pad6, `BMS${numericPart}`];
-
-    const allTransactions = await TransactionModel.find({
-      member_id: { $in: possibleIds }
-    });
-    const nonLoanTransactions = allTransactions.filter(tx =>
-      !tx.transaction_type?.toLowerCase().includes('loan') &&
-      !tx.description?.toLowerCase().includes('loan') &&
-      tx.transaction_type !== 'Top up'
-    );
-
-    let totalCredits = 0;
-    let totalDebits = 0;
-    nonLoanTransactions.forEach((tx) => {
-      totalCredits += parseFloat(tx.ew_credit) || 0;
-      totalDebits += parseFloat(tx.ew_debit) || 0;
-    });
-
-    let availableBalance = Math.max(0, totalCredits - totalDebits);
-
-    const limits = await getMemberWithdrawalLimits(member.Member_id || memberId);
-
-    if (!limits.hasInvestment) {
-      return res.status(400).json({
-        success: false,
-        message: "You must have an active investment package to request a withdrawal."
-      });
-    }
-
-    if (withdrawalAmount > limits.remainingWithdrawalLimit) {
-      return res.status(400).json({
-        success: false,
-        message: `Maximum remaining withdrawal limit is ₹${limits.remainingWithdrawalLimit.toFixed(2)} (Total 2x Limit: ₹${limits.maxWithdrawalLimit.toFixed(2)}, Already Withdrawn: ₹${limits.totalWithdrawn.toFixed(2)})`,
-        limits: limits
-      });
-    }
-
-    if (hasUnpaidLoan) {
-      return res.status(400).json({ success: false, message: "Withdrawal not allowed - You have unpaid loan amount from before last Saturday" });
-    }
-
-    if (withdrawalAmount > availableBalance) {
-      return res.status(400).json({ success: false, message: "Insufficient balance" });
-    }
-
-    // Generate and send OTP
-    const otp = generateOTP();
-    storeOTP(member.email, otp);
-
-    const bmsLogoPath = path.join(__dirname, '..', '..', '..', 'utils', 'BMS.png');
-    const attachments = [{
-      filename: 'BMS.png',
-      path: bmsLogoPath,
-      cid: 'bmslogo'
-    }];
-
-    const htmlContent = `
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #111827; border-radius: 12px; border: 1px solid #374151;">
-      <div style="text-align: center; margin-bottom: 10px;">
-        <h1 style="color: #38bdf8; text-align: center; margin: 0 0 10px 0; font-size: 32px; font-weight: 900; letter-spacing: 2px;">E shopy</h1>
-      </div>
-      <div style="background-color: #1f2937; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-        <h2 style="color: #ffffff; margin-top: 0; text-align: center; font-size: 24px;">Withdrawal Verification</h2>
-        <p style="color: #d1d5db; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
-          Dear <strong style="color: #fbbf24;">${member.Name || 'Member'}</strong>,
-        </p>
-        <p style="color: #ffffff; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
-          You have requested to withdraw <strong>₹${withdrawalAmount.toFixed(2)}</strong> from your wallet. 
-          Please use the following OTP to authorize and complete this transaction:
-        </p>
-        <div style="background-color: #374151; border-left: 4px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 4px; text-align: center;">
-          <h1 style="color: #fbbf24; margin: 0; font-size: 32px; letter-spacing: 5px;">${otp}</h1>
-        </div>
-        <p style="color: #9ca3af; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">
-          This OTP is valid for 3 minutes. If you did not request this withdrawal, please secure your account immediately.
-        </p>
-      </div>
-      <div style="text-align: center; margin-top: 25px; color: #9ca3af; font-size: 12px;">
-        &copy; ${new Date().getFullYear()} E shopy. All rights reserved.
-      </div>
-    </div>`;
-
-    // OTP sending commented out for now:
-    // await sendMail(member.email, "E shopy - Withdrawal Verification OTP", htmlContent, `Your OTP is ${otp}`, attachments);
-
-    return res.status(200).json({ success: true, message: "OTP bypassed for now" });
-  } catch (error) {
-    console.error("Error in sendWithdrawalOTP:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
-}; const sendTransferOTP = async (req, res) => {
-  // Deprecated: SMS OTP is now handled by Firebase Phone Auth on the frontend.
+const sendTransferOTP = async (req, res) => {
   return res.status(200).json({ success: true, message: "Deprecated endpoint" });
-}; const transferWallet = async (req, res) => {
+};
+
+const transferWallet = async (req, res) => {
   try {
-    const { memberId, fromWallet, toWallet, amount, otp } = req.body; // otp here is the Firebase idToken
+    const { memberId, fromWallet, toWallet, amount, otp } = req.body;
 
     if (!memberId || !fromWallet || !toWallet || !amount || !otp) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
@@ -866,7 +664,6 @@ const sendWithdrawalOTP = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid transfer amount" });
     }
 
-    // Validation rules
     const validTransfers = [
       { from: 'Earnings', to: 'Top Up Wallet' },
       { from: 'Earnings', to: 'Upgrade Wallet' },
@@ -951,7 +748,6 @@ const sendWithdrawalOTP = async (req, res) => {
     const creditTxId = await generateTransactionId("TRF_C");
 
     if (fromWallet === "Earnings" && toWallet === "Top Up Wallet") {
-      // Create two transactions: one to debit earnings, one to credit top up
       const debitTx = new TransactionModel({
         transaction_id: debitTxId,
         transaction_date: new Date(),
@@ -989,7 +785,6 @@ const sendWithdrawalOTP = async (req, res) => {
       });
 
     } else if (fromWallet === "Earnings" && toWallet === "Upgrade Wallet") {
-      // Create two transactions: one to debit earnings, one to credit upgrade
       const debitTx = new TransactionModel({
         transaction_id: debitTxId,
         transaction_date: new Date(),
@@ -1011,7 +806,7 @@ const sendWithdrawalOTP = async (req, res) => {
         transaction_date: new Date(),
         member_id: memberId,
         description: `Wallet Transfer: Received from Earnings`,
-        transaction_type: "Top up", // using Top up type to reflect in wallet
+        transaction_type: "Top up",
         ew_credit: 0,
         ew_debit: 0,
         uw_credit: transferAmount,
@@ -1032,7 +827,7 @@ const sendWithdrawalOTP = async (req, res) => {
         transaction_date: new Date(),
         member_id: memberId,
         description: `Wallet Transfer: Top Up to Upgrade Wallet`,
-        transaction_type: "Top up", // Mark as top up so it counts as top up debit
+        transaction_type: "Top up",
         ew_credit: 0,
         ew_debit: transferAmount,
         uw_credit: transferAmount,
@@ -1196,44 +991,18 @@ const transferP2PWallet = async (req, res) => {
       member_id: { $in: possibleIds }
     });
 
-    // Support Credits / Earnings / Main / Top Up
-    if (fromWallet === "Credits" || fromWallet === "Credits Wallet" || fromWallet === "Earnings" || fromWallet === "Earnings Wallet" || fromWallet === "Withdrawal Wallet" || fromWallet === "Main Wallet") {
-      const nonLoanTransactions = transactions.filter(tx =>
-        !tx.transaction_type?.toLowerCase().includes('loan') &&
-        !tx.description?.toLowerCase().includes('loan') &&
-        tx.transaction_type !== 'Top up'
-      );
-      const completedAndPendingTx = nonLoanTransactions.filter(tx =>
-        tx.status === "Completed" || tx.status === "Pending" || tx.status === "Approved"
-      );
-      const availableBalance = completedAndPendingTx.reduce((acc, tx) =>
-        acc + (parseFloat(tx.ew_credit) || 0) - (parseFloat(tx.ew_debit) || 0), 0
-      );
-      currentBalance = Math.max(0, availableBalance);
-    } else if (fromWallet === "Top Up" || fromWallet === "Top Up Wallet") {
-      const topUpTransactions = transactions.filter(tx => tx.transaction_type === 'Top up');
-      const topUpCredits = topUpTransactions
-        .filter(tx => tx.status === 'Completed' || tx.status === 'Approved')
-        .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0), 0);
-      const topUpDebits = topUpTransactions
-        .filter(tx => tx.status === 'Completed' || tx.status === 'Approved')
-        .reduce((acc, tx) => acc + (parseFloat(tx.ew_debit) || 0), 0);
-      currentBalance = Math.max(0, topUpCredits - topUpDebits);
-    } else {
-      // Default to Credits wallet
-      const nonLoanTransactions = transactions.filter(tx =>
-        !tx.transaction_type?.toLowerCase().includes('loan') &&
-        !tx.description?.toLowerCase().includes('loan') &&
-        tx.transaction_type !== 'Top up'
-      );
-      const completedAndPendingTx = nonLoanTransactions.filter(tx =>
-        tx.status === "Completed" || tx.status === "Pending" || tx.status === "Approved"
-      );
-      const availableBalance = completedAndPendingTx.reduce((acc, tx) =>
-        acc + (parseFloat(tx.ew_credit) || 0) - (parseFloat(tx.ew_debit) || 0), 0
-      );
-      currentBalance = Math.max(0, availableBalance);
-    }
+    const nonLoanTransactions = transactions.filter(tx =>
+      !tx.transaction_type?.toLowerCase().includes('loan') &&
+      !tx.description?.toLowerCase().includes('loan') &&
+      tx.transaction_type !== 'Top up'
+    );
+    const completedAndPendingTx = nonLoanTransactions.filter(tx =>
+      tx.status === "Completed" || tx.status === "Pending" || tx.status === "Approved"
+    );
+    const availableBalance = completedAndPendingTx.reduce((acc, tx) =>
+      acc + (parseFloat(tx.ew_credit) || 0) - (parseFloat(tx.ew_debit) || 0), 0
+    );
+    currentBalance = Math.max(0, availableBalance);
 
     if (transferAmount > currentBalance) {
       return res.status(400).json({ success: false, message: "Insufficient Credits balance for transfer" });
@@ -1274,7 +1043,6 @@ const transferP2PWallet = async (req, res) => {
     });
     await creditTx.save();
 
-    // Debit sender Credits wallet & Credit receiver Credits wallet
     await MemberModel.findOneAndUpdate({ Member_id: memberId }, { $inc: { wallet_balance: -transferAmount } });
     await MemberModel.findOneAndUpdate({ Member_id: receiverMember.Member_id }, { $inc: { wallet_balance: transferAmount } });
 
@@ -1286,14 +1054,22 @@ const transferP2PWallet = async (req, res) => {
 };
 
 /**
- * Vendor Wallet Overview
- * Returns vendor wallet balance, withdrawal stats, and transactions
+ * Vendor Wallet Overview (Sale Value Wallet)
+ * Strictly displays purchased package amount + daily incentive and daily roi amounts only.
  */
 const getVendorWalletOverview = async (req, res) => {
   try {
     const { memberId } = req.params;
     if (!memberId) {
       return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+
+    // Auto cleanup any duplicate referral bonuses
+    try {
+      const { cleanDuplicateReferralBonus } = require("../Payout/PayoutController");
+      await cleanDuplicateReferralBonus();
+    } catch (cleanErr) {
+      // Non-blocking
     }
 
     const member = await MemberModel.findOne({
@@ -1318,41 +1094,152 @@ const getVendorWalletOverview = async (req, res) => {
       !isNaN(numericPart) ? `BMS${numericPart}` : actualMemberId
     ].filter(Boolean)));
 
-    const transactions = await TransactionModel.find({
-      member_id: { $in: possibleIds },
-      $or: [
-        { transaction_type: { $regex: /vendor/i } },
-        { description: { $regex: /vendor/i } },
-        { transaction_type: { $in: ["Daily Incentive", "Level Bonus", "Referral Bonus", "Level Daily ROI", "ROI Payout", "Global Income"] } },
-        { vw_credit: { $exists: true, $nin: ["", "0", 0, null] } },
-        { vw_debit: { $exists: true, $nin: ["", "0", 0, null] } }
-      ]
+    // 1. Calculate Purchased Package Amounts
+    const primaryPkgAmount = parseFloat(member.package_value) || 0;
+    const addonPackages = await AddOnPackageModel.find({
+      member_id: actualMemberId,
+      roi_status: { $ne: 'Rejected' },
+      request_id: { $ne: 'PRIMARY' }
+    });
+    const totalAddonAmount = addonPackages.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+    const totalPackagePurchased = primaryPkgAmount + totalAddonAmount;
+
+    // 2. Query transactions strictly for Daily Incentive, Daily ROI, Level Daily ROI, Package Purchases, and Vendor Withdrawals
+    const allTxs = await TransactionModel.find({
+      member_id: { $in: possibleIds }
     }).sort({ createdAt: -1, transaction_date: -1 });
 
-    const vendorBalance = Math.max(0, parseFloat(member.vendor_wallet) || 0);
+    const filteredTransactions = allTxs.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
 
-    const completedWithdrawals = transactions
+      const isDailyRoiOrIncentive = (
+        txType.includes("daily incentive") ||
+        desc.includes("daily incentive") ||
+        txType.includes("roi") ||
+        desc.includes("roi") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi")
+      );
+
+      const isPackageInvest = (
+        txType.includes("invest amount") ||
+        desc.includes("primary package") ||
+        desc.includes("package activation") ||
+        desc.includes("add-on")
+      );
+
+      const isVendorWithdrawal = (
+        txType === "vendor withdrawal" ||
+        (txType.includes("withdrawal") && desc.includes("vendor"))
+      );
+
+      // Exclude Referral Bonus, Product Level Income, Level Benefits, and Earning Withdrawals
+      const isExcluded = (
+        txType.includes("referral") ||
+        desc.includes("referral") ||
+        txType.includes("product level") ||
+        desc.includes("product level") ||
+        txType.includes("product listing") ||
+        desc.includes("product listing") ||
+        txType.includes("level benefit") ||
+        desc.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        desc.includes("level bonus") ||
+        txType === "earning withdrawal"
+      );
+
+      return (isDailyRoiOrIncentive || isPackageInvest || isVendorWithdrawal) && !isExcluded;
+    });
+
+    const hasPkgTx = filteredTransactions.some(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+      return txType.includes("invest amount") || desc.includes("primary package") || desc.includes("package activation");
+    });
+
+    const displayTransactions = [...filteredTransactions];
+    if (!hasPkgTx && primaryPkgAmount > 0) {
+      displayTransactions.unshift({
+        transaction_id: `PKG-${member.spackage || actualMemberId}`,
+        transaction_date: member.roi_start_date || member.Date_of_joining || new Date(),
+        description: `Purchased Package (${member.spackage || '₹' + primaryPkgAmount})`,
+        transaction_type: "Package Purchase",
+        amount: primaryPkgAmount,
+        vw_credit: primaryPkgAmount.toString(),
+        gross_amount: primaryPkgAmount,
+        status: "Completed",
+        createdAt: member.Date_of_joining || new Date()
+      });
+    }
+
+    addonPackages.forEach(addon => {
+      const hasAddon = filteredTransactions.some(tx => {
+        const idStr = String(tx.transaction_id || "");
+        const descStr = String(tx.description || "");
+        return idStr.includes(String(addon.request_id || addon._id)) || descStr.includes(String(addon.request_id || ""));
+      });
+      if (!hasAddon && parseFloat(addon.amount) > 0) {
+        displayTransactions.push({
+          transaction_id: `ADDON-${addon.request_id || addon._id}`,
+          transaction_date: addon.created_at || addon.approved_at || new Date(),
+          description: `Add-On Package (${addon.package_name || '₹' + addon.amount})`,
+          transaction_type: "Add-On Package",
+          amount: parseFloat(addon.amount),
+          vw_credit: String(addon.amount),
+          gross_amount: parseFloat(addon.amount),
+          status: "Completed",
+          createdAt: addon.created_at || new Date()
+        });
+      }
+    });
+
+    displayTransactions.sort((a, b) => new Date(b.transaction_date || b.createdAt) - new Date(a.transaction_date || a.createdAt));
+
+    const totalDailyRoiAndIncentive = filteredTransactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return !txType.includes("withdrawal") && !txType.includes("invest") && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || parseFloat(tx.net_amount) || parseFloat(tx.ew_credit) || 0), 0);
+
+    const totalIncome = totalPackagePurchased + totalDailyRoiAndIncentive;
+
+    const completedWithdrawals = filteredTransactions
       .filter(tx => (tx.transaction_type?.toLowerCase().includes("withdrawal") || parseFloat(tx.vw_debit) > 0) && tx.status === "Completed")
       .reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
 
-    const pendingWithdrawals = transactions
+    const pendingWithdrawals = filteredTransactions
       .filter(tx => (tx.transaction_type?.toLowerCase().includes("withdrawal") || parseFloat(tx.vw_debit) > 0) && (tx.status === "Pending" || tx.status === "Processing"))
       .reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
 
-    const totalIncome = transactions
-      .filter(tx => (parseFloat(tx.vw_credit) > 0 || (!tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed" && (parseFloat(tx.vw_credit) > 0 || parseFloat(tx.net_amount) > 0))))
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || parseFloat(tx.net_amount) || 0), 0);
+    const vendorBalance = Math.max(0, totalIncome - completedWithdrawals - pendingWithdrawals);
+
+    const maxWithdrawalLimit = totalPackagePurchased * 2; // 2x package amount for Sale Value Wallet
+    const totalWithdrawn = completedWithdrawals + pendingWithdrawals;
+    const remainingWithdrawalLimit = Math.max(0, maxWithdrawalLimit - totalWithdrawn);
+
+    await MemberModel.updateOne(
+      { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
+      { $set: { vendor_wallet: vendorBalance } }
+    );
 
     return res.status(200).json({
       success: true,
       data: {
         balance: vendorBalance.toFixed(2),
         vendorWalletBalance: vendorBalance.toFixed(2),
+        packagePurchased: totalPackagePurchased.toFixed(2),
+        packageAmount: totalPackagePurchased.toFixed(2),
+        maxWithdrawalLimit: maxWithdrawalLimit.toFixed(2),
+        totalWithdrawn: totalWithdrawn.toFixed(2),
+        remainingWithdrawalLimit: remainingWithdrawalLimit.toFixed(2),
+        totalDailyRoi: totalDailyRoiAndIncentive.toFixed(2),
         totalIncome: totalIncome.toFixed(2),
         totalWithdrawal: completedWithdrawals.toFixed(2),
         pendingWithdrawals: pendingWithdrawals.toFixed(2),
-        transactionsCount: transactions.length,
-        transactions: transactions
+        transactionsCount: displayTransactions.length,
+        transactions: displayTransactions
       }
     });
   } catch (error) {
@@ -1392,6 +1279,42 @@ const vendorWalletWithdraw = async (req, res) => {
     const actualMemberId = member.Member_id || memberId;
     const currentBalance = parseFloat(member.vendor_wallet) || 0;
 
+    // 1. Calculate Package Amount & 2x Limit (Sale Value Wallet)
+    const primaryPkgAmount = parseFloat(member.package_value) || 0;
+    const addonPackages = await AddOnPackageModel.find({
+      member_id: actualMemberId,
+      roi_status: { $ne: 'Rejected' },
+      request_id: { $ne: 'PRIMARY' }
+    });
+    const totalAddonAmount = addonPackages.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+    const totalPackagePurchased = primaryPkgAmount + totalAddonAmount;
+
+    if (totalPackagePurchased <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "You must have an active investment package to request a withdrawal from Sale Value Wallet."
+      });
+    }
+
+    const maxLimit = totalPackagePurchased * 2; // 2x package amount for Sale Value Wallet
+    const withdrawalTxs = await TransactionModel.find({
+      member_id: actualMemberId,
+      $or: [
+        { transaction_type: "Vendor Withdrawal" },
+        { description: { $regex: "Vendor.*Withdrawal", $options: "i" } }
+      ],
+      status: { $in: ["Completed", "Approved", "Pending", "Processing"] }
+    });
+    const totalWithdrawn = withdrawalTxs.reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
+    const remainingLimit = Math.max(0, maxLimit - totalWithdrawn);
+
+    if (withdrawalAmount > remainingLimit) {
+      return res.status(400).json({
+        success: false,
+        message: `Withdrawal exceeds 2x package limit. Maximum remaining allowed is ₹${remainingLimit.toFixed(2)} (Total 2x Limit: ₹${maxLimit.toFixed(2)}, Already Withdrawn: ₹${totalWithdrawn.toFixed(2)})`
+      });
+    }
+
     if (withdrawalAmount > currentBalance) {
       return res.status(400).json({
         success: false,
@@ -1399,8 +1322,7 @@ const vendorWalletWithdraw = async (req, res) => {
       });
     }
 
-    // 10% standard deduction
-    const deduction = withdrawalAmount * 0.10;
+    const deduction = withdrawalAmount * 0.05;
     const netAmount = withdrawalAmount - deduction;
 
     const newTransactionId = await generateTransactionId("V_WTH");
@@ -1423,7 +1345,6 @@ const vendorWalletWithdraw = async (req, res) => {
 
     await newTransaction.save();
 
-    // Deduct from vendor_wallet atomically
     const updatedMember = await MemberModel.findOneAndUpdate(
       { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
       { $inc: { vendor_wallet: -withdrawalAmount } },
@@ -1441,7 +1362,7 @@ const vendorWalletWithdraw = async (req, res) => {
           grossAmount: withdrawalAmount.toFixed(2),
           deduction: deduction.toFixed(2),
           netAmount: netAmount.toFixed(2),
-          deductionRate: "10%"
+          deductionRate: "5%"
         },
         balanceDetails: {
           previousBalance: currentBalance.toFixed(2),
@@ -1456,6 +1377,392 @@ const vendorWalletWithdraw = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error during vendor wallet withdrawal",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Earning Wallet Overview
+ * Strictly shows all remaining incomes (Referral Bonus) except Daily ROI, Daily Incentive, and Product Level listing commission.
+ */
+const getEarningWalletOverview = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+
+    // Auto cleanup any duplicate referral bonuses
+    try {
+      const { cleanDuplicateReferralBonus } = require("../Payout/PayoutController");
+      await cleanDuplicateReferralBonus();
+    } catch (cleanErr) {
+      // Non-blocking
+    }
+
+    const member = await MemberModel.findOne({
+      $or: [{ Member_id: memberId }, { member_id: memberId }]
+    });
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const actualMemberId = member.Member_id || memberId;
+    const numericPart = parseInt(actualMemberId.replace(/[^0-9]/g, ''), 10);
+    const pad5 = !isNaN(numericPart) ? String(numericPart).padStart(5, '0') : actualMemberId;
+    const pad6 = !isNaN(numericPart) ? String(numericPart).padStart(6, '0') : actualMemberId;
+
+    const possibleIds = Array.from(new Set([
+      actualMemberId,
+      actualMemberId.replace('BMS', ''),
+      `BMS${pad5}`,
+      `BMS${pad6}`,
+      pad5,
+      pad6,
+      !isNaN(numericPart) ? `BMS${numericPart}` : actualMemberId
+    ].filter(Boolean)));
+
+    const allTxs = await TransactionModel.find({
+      member_id: { $in: possibleIds }
+    }).sort({ createdAt: -1, transaction_date: -1 });
+
+    const transactions = allTxs.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+      const benefit = (tx.benefit_type || "").toLowerCase();
+
+      // Product level income has its own dedicated Product Level Wallet - exclude from Earning Wallet
+      const isProductLevelIncome = (
+        desc.includes("product level") ||
+        txType.includes("product level") ||
+        desc.includes("product listing") ||
+        txType.includes("product listing") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        benefit.includes("level income") ||
+        parseFloat(tx.pw_credit) > 0 ||
+        txType === "product level withdrawal"
+      );
+
+      const isDepositOrLoadFund = (
+        txType.includes("deposit") ||
+        desc.includes("deposit") ||
+        txType.includes("load fund") ||
+        desc.includes("load fund") ||
+        txType.includes("credit deposit") ||
+        desc.includes("add credits") ||
+        txType.includes("add money") ||
+        desc.includes("add money") ||
+        txType.includes("top up") ||
+        desc.includes("top up") ||
+        txType.includes("transfer") ||
+        desc.includes("transfer") ||
+        txType.includes("p2p") ||
+        desc.includes("p2p") ||
+        txType.includes("refund") ||
+        desc.includes("refund")
+      );
+
+      const isEarningIncome = (
+        txType.includes("referral") ||
+        desc.includes("referral") ||
+        (benefit === "direct" && !isDepositOrLoadFund) ||
+        txType.includes("repayment commission") ||
+        desc.includes("repayment commission")
+      ) && !isDepositOrLoadFund;
+
+      const isEarningWithdrawal = (
+        txType === "earning withdrawal" ||
+        (txType.includes("withdrawal") && desc.includes("earning"))
+      );
+
+      const isExcluded = (
+        txType.includes("daily incentive") ||
+        desc.includes("daily incentive") ||
+        txType.includes("roi") ||
+        desc.includes("roi") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi") ||
+        txType.includes("invest amount") ||
+        txType === "vendor withdrawal" ||
+        isProductLevelIncome ||
+        isDepositOrLoadFund
+      );
+
+      return (isEarningIncome || isEarningWithdrawal) && !isExcluded;
+    });
+
+    const totalIncome = transactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return !txType.includes("withdrawal") && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || parseFloat(tx.vw_credit) || parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || 0), 0);
+
+    const completedWithdrawals = transactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return txType.includes("withdrawal") && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const pendingWithdrawals = transactions
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        return txType.includes("withdrawal") && (tx.status === "Pending" || tx.status === "Processing");
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const earningBalance = Math.max(0, totalIncome - completedWithdrawals - pendingWithdrawals);
+
+    // Calculate Package Amount & 1x Limit (Earning Wallet)
+    const primaryPkgAmount = parseFloat(member.package_value) || 0;
+    const addonPackages = await AddOnPackageModel.find({
+      member_id: actualMemberId,
+      roi_status: { $ne: 'Rejected' },
+      request_id: { $ne: 'PRIMARY' }
+    });
+    const totalAddonAmount = addonPackages.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+    const totalPackagePurchased = primaryPkgAmount + totalAddonAmount;
+
+    const maxWithdrawalLimit = totalPackagePurchased * 1; // 1x package amount for Earning Wallet
+    const totalWithdrawn = completedWithdrawals + pendingWithdrawals;
+    const remainingWithdrawalLimit = Math.max(0, maxWithdrawalLimit - totalWithdrawn);
+
+    await MemberModel.updateOne(
+      { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
+      { $set: { earning_wallet: earningBalance } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        balance: earningBalance.toFixed(2),
+        earningWalletBalance: earningBalance.toFixed(2),
+        packagePurchased: totalPackagePurchased.toFixed(2),
+        packageAmount: totalPackagePurchased.toFixed(2),
+        maxWithdrawalLimit: maxWithdrawalLimit.toFixed(2),
+        totalWithdrawn: totalWithdrawn.toFixed(2),
+        remainingWithdrawalLimit: remainingWithdrawalLimit.toFixed(2),
+        totalIncome: totalIncome.toFixed(2),
+        totalWithdrawal: completedWithdrawals.toFixed(2),
+        pendingWithdrawals: pendingWithdrawals.toFixed(2),
+        transactionsCount: transactions.length,
+        transactions: transactions
+      }
+    });
+  } catch (error) {
+    console.error("Error in getEarningWalletOverview:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+/**
+ * Earning Wallet Withdrawal
+ * Exclusively handles withdrawals from Earning Wallet
+ */
+const earningWalletWithdraw = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    const { amount } = req.body;
+
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: "Member ID is required" });
+    }
+    if (!amount) {
+      return res.status(400).json({ success: false, message: "Withdrawal amount is required" });
+    }
+
+    const withdrawalAmount = parseFloat(amount);
+    if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
+    }
+
+    const member = await MemberModel.findOne({
+      $or: [{ Member_id: memberId }, { member_id: memberId }]
+    });
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const actualMemberId = member.Member_id || memberId;
+
+    const allTxs = await TransactionModel.find({
+      member_id: actualMemberId
+    });
+
+    const earningTxs = allTxs.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+      const benefit = (tx.benefit_type || "").toLowerCase();
+
+      const isProductLevelIncome = (
+        desc.includes("product level") ||
+        txType.includes("product level") ||
+        desc.includes("product listing") ||
+        txType.includes("product listing") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        benefit.includes("level income") ||
+        parseFloat(tx.pw_credit) > 0 ||
+        txType === "product level withdrawal"
+      );
+
+      const isDepositOrLoadFund = (
+        txType.includes("deposit") ||
+        desc.includes("deposit") ||
+        txType.includes("load fund") ||
+        desc.includes("load fund") ||
+        txType.includes("credit deposit") ||
+        desc.includes("add credits") ||
+        txType.includes("add money") ||
+        desc.includes("add money") ||
+        txType.includes("top up") ||
+        desc.includes("top up") ||
+        txType.includes("transfer") ||
+        desc.includes("transfer") ||
+        txType.includes("p2p") ||
+        desc.includes("p2p") ||
+        txType.includes("refund") ||
+        desc.includes("refund")
+      );
+
+      const isEarningIncome = (
+        txType.includes("referral") ||
+        desc.includes("referral") ||
+        (benefit === "direct" && !isDepositOrLoadFund) ||
+        txType.includes("repayment commission") ||
+        desc.includes("repayment commission")
+      ) && !isDepositOrLoadFund;
+
+      const isEarningWithdrawal = (
+        txType === "earning withdrawal" ||
+        (txType.includes("withdrawal") && desc.includes("earning"))
+      );
+      const isExcluded = (
+        txType.includes("daily incentive") ||
+        desc.includes("daily incentive") ||
+        txType.includes("roi") ||
+        desc.includes("roi") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi") ||
+        txType.includes("invest amount") ||
+        txType === "vendor withdrawal" ||
+        isProductLevelIncome ||
+        isDepositOrLoadFund
+      );
+
+      return (isEarningIncome || isEarningWithdrawal) && !isExcluded;
+    });
+
+    const totalIncome = earningTxs
+      .filter(tx => !tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
+      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || parseFloat(tx.vw_credit) || parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || 0), 0);
+
+    const completedWithdrawals = earningTxs
+      .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const pendingWithdrawals = earningTxs
+      .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && (tx.status === "Pending" || tx.status === "Processing"))
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.vw_debit) || 0), 0);
+
+    const currentBalance = Math.max(0, totalIncome - completedWithdrawals - pendingWithdrawals);
+
+    // Calculate Package Amount & 1x Limit (Earning Wallet)
+    const primaryPkgAmount = parseFloat(member.package_value) || 0;
+    const addonPackages = await AddOnPackageModel.find({
+      member_id: actualMemberId,
+      roi_status: { $ne: 'Rejected' },
+      request_id: { $ne: 'PRIMARY' }
+    });
+    const totalAddonAmount = addonPackages.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+    const totalPackagePurchased = primaryPkgAmount + totalAddonAmount;
+
+    if (totalPackagePurchased <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "You must have an active investment package to request a withdrawal from Earning Wallet."
+      });
+    }
+
+    const maxLimit = totalPackagePurchased * 1; // 1x package amount for Earning Wallet
+    const totalWithdrawn = completedWithdrawals + pendingWithdrawals;
+    const remainingLimit = Math.max(0, maxLimit - totalWithdrawn);
+
+    if (withdrawalAmount > remainingLimit) {
+      return res.status(400).json({
+        success: false,
+        message: `Withdrawal exceeds 1x package limit. Maximum remaining allowed is ₹${remainingLimit.toFixed(2)} (Total 1x Limit: ₹${maxLimit.toFixed(2)}, Already Withdrawn: ₹${totalWithdrawn.toFixed(2)})`
+      });
+    }
+
+    if (withdrawalAmount > currentBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient Earning Wallet balance. Available: ₹${currentBalance.toFixed(2)}`
+      });
+    }
+
+    const deduction = withdrawalAmount * 0.05;
+    const netAmount = withdrawalAmount - deduction;
+
+    const newTransactionId = await generateTransactionId("EW_WTH");
+
+    const newTransaction = new TransactionModel({
+      transaction_id: newTransactionId,
+      transaction_date: new Date(),
+      member_id: actualMemberId,
+      description: "Earning Wallet Withdrawal Request",
+      transaction_type: "Earning Withdrawal",
+      vw_credit: 0,
+      vw_debit: 0,
+      ew_credit: 0,
+      ew_debit: withdrawalAmount,
+      status: "Pending",
+      deduction: deduction,
+      net_amount: netAmount,
+      gross_amount: withdrawalAmount
+    });
+
+    await newTransaction.save();
+
+    await MemberModel.findOneAndUpdate(
+      { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
+      { $inc: { earning_wallet: -withdrawalAmount } }
+    );
+
+    const newBalance = Math.max(0, currentBalance - withdrawalAmount);
+
+    return res.status(200).json({
+      success: true,
+      message: "Earning wallet withdrawal request submitted successfully",
+      data: {
+        transactionId: newTransaction.transaction_id,
+        withdrawalDetails: {
+          grossAmount: withdrawalAmount.toFixed(2),
+          deduction: deduction.toFixed(2),
+          netAmount: netAmount.toFixed(2),
+          deductionRate: "5%"
+        },
+        balanceDetails: {
+          previousBalance: currentBalance.toFixed(2),
+          withdrawalAmount: withdrawalAmount.toFixed(2),
+          newAvailableBalance: newBalance.toFixed(2)
+        },
+        status: "Pending"
+      }
+    });
+  } catch (error) {
+    console.error("Error in earningWalletWithdraw:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during earning wallet withdrawal",
       error: error.message
     });
   }
@@ -1506,11 +1813,14 @@ const getProductLevelWalletOverview = async (req, res) => {
       const isProductLevelIncome = (
         desc.includes("product level") ||
         txType.includes("product level") ||
+        desc.includes("product listing") ||
+        txType.includes("product listing") ||
         desc.includes("level benefit") ||
         desc.includes("level bonus") ||
         txType.includes("level benefit") ||
         txType.includes("level bonus") ||
-        benefit.includes("level income")
+        benefit.includes("level income") ||
+        parseFloat(tx.pw_credit) > 0
       );
 
       const isProductLevelWithdrawal = (
@@ -1536,7 +1846,7 @@ const getProductLevelWalletOverview = async (req, res) => {
         const txType = (tx.transaction_type || "").toLowerCase();
         return !txType.includes("withdrawal") && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
 
     const completedWithdrawals = transactions
       .filter(tx => {
@@ -1614,11 +1924,14 @@ const productLevelWalletWithdraw = async (req, res) => {
       const isProductLevelIncome = (
         desc.includes("product level") ||
         txType.includes("product level") ||
+        desc.includes("product listing") ||
+        txType.includes("product listing") ||
         desc.includes("level benefit") ||
         desc.includes("level bonus") ||
         txType.includes("level benefit") ||
         txType.includes("level bonus") ||
-        benefit.includes("level income")
+        benefit.includes("level income") ||
+        parseFloat(tx.pw_credit) > 0
       );
       const isProductLevelWithdrawal = (
         txType.includes("product level withdrawal") ||
@@ -1639,7 +1952,7 @@ const productLevelWalletWithdraw = async (req, res) => {
 
     const totalIncome = levelTxs
       .filter(tx => !tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
 
     const completedWithdrawals = levelTxs
       .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
@@ -1658,8 +1971,7 @@ const productLevelWalletWithdraw = async (req, res) => {
       });
     }
 
-    // 10% standard deduction
-    const deduction = withdrawalAmount * 0.10;
+    const deduction = withdrawalAmount * 0.05;
     const netAmount = withdrawalAmount - deduction;
 
     const newTransactionId = await generateTransactionId("PL_WTH");
@@ -1693,7 +2005,7 @@ const productLevelWalletWithdraw = async (req, res) => {
           grossAmount: withdrawalAmount.toFixed(2),
           deduction: deduction.toFixed(2),
           netAmount: netAmount.toFixed(2),
-          deductionRate: "10%"
+          deductionRate: "5%"
         },
         balanceDetails: {
           previousBalance: currentBalance.toFixed(2),
@@ -1724,6 +2036,8 @@ module.exports = {
   getMemberWithdrawalLimits,
   getVendorWalletOverview,
   vendorWalletWithdraw,
+  getEarningWalletOverview,
+  earningWalletWithdraw,
   getProductLevelWalletOverview,
   productLevelWalletWithdraw
 };

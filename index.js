@@ -46,26 +46,59 @@ const allowedOrigins = [
   "https://bluskymicro01ui.vercel.app",
   "https://e-cash.in",
   "https://www.e-cash.in",
-  "https://www.bluskymicroservices.com"
+  "https://www.bluskymicroservices.com",
+  "https://uwcplus.com",
+  "https://www.uwcplus.com"
 ].filter(Boolean).map(o => o.replace(/\/$/, ""));
 
 const isOriginAllowed = (origin) => {
   if (!origin) return true; // Postman / server-to-server / curl
   const cleanOrigin = origin.replace(/\/$/, "");
-  const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
-  const isNgrok = origin.endsWith("ngrok-free.dev");
-  const isEshopy = /^https:\/\/(.*\.)?eshopy\.biz$/.test(cleanOrigin);
+  const isLocalhost = /^http:\/\/localhost:\d+$/i.test(origin);
+  const isNgrok = origin.toLowerCase().includes("ngrok");
+  const isEshopy = /^https?:\/\/(.*\.)?eshopy\.biz$/i.test(cleanOrigin);
+  const isUwcplus = /^https?:\/\/(.*\.)?uwcplus\.[a-z]+$/i.test(cleanOrigin);
+  const isBmsworld = /^https?:\/\/(.*\.)?bmsworld\.club$/i.test(cleanOrigin);
+  const isEcash = /^https?:\/\/(.*\.)?e-cash\.in$/i.test(cleanOrigin);
+  const isBlusky = /^https?:\/\/(.*\.)?bluskymicroservices\.com$/i.test(cleanOrigin);
   const isVercel = cleanOrigin.endsWith(".vercel.app");
 
   return (
     isLocalhost ||
     isNgrok ||
     isEshopy ||
+    isUwcplus ||
+    isBmsworld ||
+    isEcash ||
+    isBlusky ||
     isVercel ||
     allowedOrigins.includes(cleanOrigin) ||
     allowedOrigins.includes(origin)
   );
 };
+
+// Immediate preflight & dynamic CORS headers middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (isOriginAllowed(origin)) {
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    }
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, Accept, X-Requested-With, Origin, ngrok-skip-browser-warning, X-CSRF-Token, X-Api-Version"
+    );
+  }
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -73,11 +106,21 @@ const corsOptions = {
       return callback(null, true);
     }
     console.warn(`⚠️ CORS blocked for origin: ${origin}`);
-    return callback(new Error(`CORS BLOCKED: ${origin}`));
+    return callback(null, false);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin", "ngrok-skip-browser-warning"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "X-Requested-With",
+    "Origin",
+    "ngrok-skip-browser-warning",
+    "X-CSRF-Token",
+    "X-Api-Version"
+  ],
+  optionsSuccessStatus: 200,
 };
 
 app.use(cors(corsOptions));

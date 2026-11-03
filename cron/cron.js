@@ -1,6 +1,7 @@
 const cron = require("node-cron");
 const { processDailyROI } = require("../controllers/Users/roiService/roiService");
 const { processAutoUpgrades } = require("../controllers/Packages/autoUpgradeService");
+const { cleanDuplicateReferralBonus } = require("../controllers/Users/Payout/PayoutController");
 
 /**
  * Initialize all cron jobs for the application
@@ -37,10 +38,19 @@ const initCronJobs = () => {
 
     console.log("📅 [CRON] Scheduler initialized: Auto Upgrade Wallet at 01:00 AM (Asia/Kolkata).");
 
-    // 3. Immediate check on startup (Catch-up logic)
-    // Ensures missed days are processed if the server was offline.
+    // 3. Immediate check on startup (Catch-up logic and auto duplicate cleanup)
     setTimeout(async () => {
-        console.log("⏰ [CRON] Running Startup ROI Check & Auto-Upgrade (Fail-Safe Catch-up)...");
+        console.log("⏰ [CRON] Running Startup ROI Check, Auto-Upgrade & Duplicate Cleanup...");
+
+        // Auto-clean any duplicate referral bonuses
+        try {
+            const dupResult = await cleanDuplicateReferralBonus();
+            if (dupResult && dupResult.success) {
+                console.log(`🧹 [CRON] Duplicate Referral Check: ${dupResult.message}`);
+            }
+        } catch (dupErr) {
+            console.error("❌ [CRON] Error checking duplicate referral bonus:", dupErr.message);
+        }
 
         try {
             const result = await processDailyROI();
