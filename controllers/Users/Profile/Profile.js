@@ -64,22 +64,41 @@ const getMemberDetails = async (req, res) => {
     }
 
     // For regular members - get actual registration counts from database
-    const directCount = await MemberModel.countDocuments({
+    // For regular members - get actual registration counts from database
+    const possibleSponsorIds = [
+      foundUser.Member_id,
+      foundUser.member_id,
+      foundUser.mobileno,
+      foundUser.contactno,
+      foundUser.member_code
+    ].filter(Boolean);
+
+    const directDbCount = await MemberModel.countDocuments({
       $or: [
-        { introducer: foundUser.Member_id },
-        { sponsor_id: foundUser.Member_id },
-        { Sponsor_code: foundUser.Member_id }
+        { introducer: { $in: possibleSponsorIds } },
+        { sponsor_id: { $in: possibleSponsorIds } },
+        { Sponsor_code: { $in: possibleSponsorIds } }
       ]
     });
+
+    const directArrayCount = Array.isArray(foundUser.direct_referrals) ? foundUser.direct_referrals.length : 0;
+    const directCount = Math.max(directDbCount, directArrayCount);
 
     const totalTeamCount = await MemberModel.countDocuments({
       $or: [
-        { introducer_hierarchy: foundUser.Member_id },
-        { referral_path: { $regex: foundUser.Member_id, $options: 'i' } }
+        { introducer_hierarchy: { $in: possibleSponsorIds } },
+        { referral_path: { $regex: foundUser.Member_id || foundUser.member_id, $options: 'i' } }
       ]
     });
 
-    const indirectCount = totalTeamCount - directCount;
+    const indirectCount = Math.max(0, totalTeamCount - directCount);
+
+    // Calculate level: increases with each direct referral until 20
+    const calculatedLevel = Math.min(20, Math.max(Number(foundUser.level) || 0, directCount));
+    if (foundUser.level !== calculatedLevel) {
+      foundUser.level = calculatedLevel;
+      await MemberModel.updateOne({ _id: foundUser._id }, { $set: { level: calculatedLevel } });
+    }
 
     if (!foundUser.qr_code && (foundUser.Member_id || foundUser.member_id)) {
       foundUser.qr_code = `BMS-P2P:${foundUser.Member_id || foundUser.member_id}`;
@@ -159,6 +178,7 @@ const getMemberDetails = async (req, res) => {
     // Add registration data to response
     const responseData = {
       ...foundUser.toObject(),
+      level: calculatedLevel,
       member_code: memberCodeFormatted,
       user_id: memberCodeFormatted,
       reference_id: memberCodeFormatted,

@@ -457,26 +457,64 @@ return transaction;
 
 const updateSponsorReferrals = async (sponsorId, newMemberId) => {
   try {
-    const sponsorQuery = { $or: [{ Member_id: sponsorId }, { member_id: sponsorId }] };
+    const sponsorQuery = {
+      $or: [
+        { Member_id: sponsorId },
+        { member_id: sponsorId },
+        { mobileno: sponsorId },
+        { member_code: sponsorId }
+      ]
+    };
     const sponsor = await MemberModel.findOne(sponsorQuery);
     if (!sponsor) {
       console.error(`Sponsor not found: ${sponsorId}`);
       return;
     }
+
+    const actualSponsorId = sponsor.Member_id || sponsor.member_id;
+
+    // Track direct referrals
+    const referrals = Array.isArray(sponsor.direct_referrals) ? [...sponsor.direct_referrals] : [];
+    if (newMemberId && !referrals.includes(newMemberId)) {
+      referrals.push(newMemberId);
+    }
+
+    // Count all direct members in DB matching sponsor
+    const possibleSponsorIds = [
+      sponsor.Member_id,
+      sponsor.member_id,
+      sponsor.mobileno,
+      sponsor.contactno,
+      sponsor.member_code
+    ].filter(Boolean);
+
+    const dbDirectCount = await MemberModel.countDocuments({
+      $or: [
+        { introducer: { $in: possibleSponsorIds } },
+        { sponsor_id: { $in: possibleSponsorIds } },
+        { Sponsor_code: { $in: possibleSponsorIds } }
+      ]
+    });
+
+    const totalDirects = Math.max(referrals.length, dbDirectCount);
+    // When vendor refers another vendor, level increases with each direct referral until max 20
+    const newLevel = Math.min(20, Math.max(Number(sponsor.level) || 0, totalDirects));
+
     await MemberModel.findOneAndUpdate(
-      sponsorQuery,
+      { _id: sponsor._id },
       {
         $addToSet: { direct_referrals: newMemberId },
-        $inc: { total_team: 1 }
+        $inc: { total_team: 1 },
+        $set: { level: newLevel }
       }
     );
 
-console.log(`✅ Updated referrals for ${sponsorId}: Added ${newMemberId}`);
+    console.log(`✅ Updated referrals for ${actualSponsorId}: Added ${newMemberId}, new level: ${newLevel} (total direct referrals: ${totalDirects})`);
 
   } catch (error) {
-  console.error("❌ Error updating referrals:", error);
-  throw error;
-}
+    console.error("❌ Error updating referrals:", error);
+    throw error;
+  }
 };
 
 const getUplineTree = async (memberIdOrReq, maxLevelsOrRes = 15) => {
