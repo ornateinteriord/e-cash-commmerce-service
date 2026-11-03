@@ -1194,6 +1194,41 @@ const getVendorWalletOverview = async (req, res) => {
       }
     });
 
+    displayTransactions.forEach(tx => {
+      let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
+      if (!val || val === 0 || isNaN(val)) {
+        const desc = String(tx.description || "");
+        const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
+        if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
+        else {
+          const pctMatch = desc.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*₹?\s*(\d+(?:\.\d+)?)/i);
+          if (pctMatch) {
+            const rate = parseFloat(pctMatch[1]);
+            const base = parseFloat(pctMatch[2]);
+            if (rate > 0 && base > 0) val = (base * rate) / 100;
+          } else {
+            const rupeeMatch = desc.match(/₹\s*(\d+(?:\.\d+)?)/);
+            if (rupeeMatch && parseFloat(rupeeMatch[1]) > 0) val = parseFloat(rupeeMatch[1]);
+          }
+        }
+        if (val && val > 0) {
+          const isDebit = parseFloat(tx.vw_debit || 0) > 0 || (tx.transaction_type && /withdraw|debit/i.test(tx.transaction_type));
+          if (!isDebit) {
+            if (tx._doc) {
+              tx._doc.vw_credit = String(val);
+              tx._doc.net_amount = val;
+              tx._doc.amount = val;
+              tx._doc.gross_amount = val;
+            }
+            tx.vw_credit = String(val);
+            tx.net_amount = val;
+            tx.amount = val;
+            tx.gross_amount = val;
+          }
+        }
+      }
+    });
+
     displayTransactions.sort((a, b) => new Date(b.transaction_date || b.createdAt) - new Date(a.transaction_date || a.createdAt));
 
     const totalDailyRoiAndIncentive = filteredTransactions
@@ -1201,7 +1236,26 @@ const getVendorWalletOverview = async (req, res) => {
         const txType = (tx.transaction_type || "").toLowerCase();
         return !txType.includes("withdrawal") && !txType.includes("invest") && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || parseFloat(tx.net_amount) || parseFloat(tx.ew_credit) || 0), 0);
+      .reduce((acc, tx) => {
+        let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
+        if (!val || val === 0 || isNaN(val)) {
+          const desc = String(tx.description || "");
+          const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
+          if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
+          else {
+            const pctMatch = desc.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*₹?\s*(\d+(?:\.\d+)?)/i);
+            if (pctMatch) {
+              const rate = parseFloat(pctMatch[1]);
+              const base = parseFloat(pctMatch[2]);
+              if (rate > 0 && base > 0) val = (base * rate) / 100;
+            } else {
+              const rupeeMatch = desc.match(/₹\s*(\d+(?:\.\d+)?)/);
+              if (rupeeMatch && parseFloat(rupeeMatch[1]) > 0) val = parseFloat(rupeeMatch[1]);
+            }
+          }
+        }
+        return acc + (val || 0);
+      }, 0);
 
     const totalIncome = totalPackagePurchased + totalDailyRoiAndIncentive;
 

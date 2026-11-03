@@ -7,10 +7,9 @@ const { cleanDuplicateReferralBonus } = require("../controllers/Users/Payout/Pay
  * Initialize all cron jobs for the application
  */
 const initCronJobs = () => {
-    // 1. Daily ROI Payout at 12:00 AM Monday through Friday (Asia/Kolkata)
-    // Runs automatically on business days (Mon-Fri). Weekends (Sat/Sun) are skipped.
-    cron.schedule("00 00 * * 1-5", async () => {
-        console.log("⏰ [CRON] Triggering Daily ROI Distribution (Weekdays 1-5) at 12:00 AM IST...");
+    // 1. Daily ROI & Daily Incentive Payout at 12:00 AM Every Day (Monday through Sunday including weekends)
+    cron.schedule("00 00 * * *", async () => {
+        console.log("⏰ [CRON] Triggering Daily ROI Distribution (Every Day) at 12:00 AM IST...");
         try {
             const result = await processDailyROI();
             console.log("✅ [CRON] Daily ROI Payout completed:", result);
@@ -21,7 +20,7 @@ const initCronJobs = () => {
         timezone: "Asia/Kolkata"
     });
 
-    console.log("📅 [CRON] Scheduler initialized: Daily ROI at 12:00 AM Monday-Friday (Asia/Kolkata).");
+    console.log("📅 [CRON] Scheduler initialized: Daily ROI at 12:00 AM Every Day (Asia/Kolkata).");
 
     // 2. Auto Upgrade Wallet Check at 01:00 AM every day (Asia/Kolkata)
     cron.schedule("00 01 * * *", async () => {

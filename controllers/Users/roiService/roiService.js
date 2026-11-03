@@ -91,11 +91,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const daysToProcess = [];
 
                 while (dateCursor.isSameOrBefore(todayMoment) && (currentCount + daysToProcess.length) < targetDays) {
-                    const dayOfWeek = dateCursor.day(); // 0 = Sunday, 6 = Saturday
-                    // Skip Saturday and Sunday (weekdays Monday-Friday only)
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
-                    }
+                    daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
                     dateCursor.add(1, "days");
                 }
 
@@ -127,10 +123,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     const newCount = currentCount + 1;
                     const txId = `DI_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-                    const memberLevel = member.level !== undefined && member.level !== null ? member.level : 0;
-                    const descText = memberLevel > 0
-                        ? `Daily Incentive (Level ${memberLevel} - ₹${actualDaily}/day) - Day ${newCount}/${targetDays}`
-                        : `Daily Incentive (0.50% of ₹${pkgAmount}) - Day ${newCount}/${targetDays}`;
+                    const descText = `Daily Incentive (0.50% of ₹${pkgAmount}) - Day ${newCount}/${targetDays}`;
 
                     // Create transaction with 100% Vendor Wallet (vw_credit)
                     const dailyTx = new TransactionModel({
@@ -237,11 +230,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const daysToProcess = [];
 
                 while (dateCursor.isSameOrBefore(todayMoment) && (currentCount + daysToProcess.length) < targetDays) {
-                    const dayOfWeek = dateCursor.day(); // 0 = Sunday, 6 = Saturday
-                    // Skip Saturday and Sunday (weekdays Monday-Friday only)
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
-                    }
+                    daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
                     dateCursor.add(1, "days");
                 }
 
@@ -331,7 +320,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
         for (const schedule of activeSchedules) {
             try {
-                const targetDays = schedule.target_days || 50;
+                const targetDays = schedule.target_days || 100;
                 let currentCount = schedule.payout_count || 0;
 
                 if (currentCount >= targetDays) {
@@ -370,11 +359,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 const daysToProcess = [];
 
                 while (dateCursor.isSameOrBefore(todayMoment) && (currentCount + daysToProcess.length) < targetDays) {
-                    const dayOfWeek = dateCursor.day(); // 0 = Sunday, 6 = Saturday
-                    // Skip Saturday and Sunday (weekdays Monday-Friday only)
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
-                    }
+                    daysToProcess.push(dateCursor.format("YYYY-MM-DD"));
                     dateCursor.add(1, "days");
                 }
 
@@ -428,7 +413,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         payout_id: Date.now() + Math.floor(Math.random() * 1000),
                         date: moment(payoutDate, "YYYY-MM-DD").toDate(),
                         memberId: schedule.sponsor_id,
-                        payout_type: `Level ${schedule.level} Daily ROI (50 Days)`,
+                        payout_type: `Level ${schedule.level} Daily ROI (100 Days)`,
                         ref_no: schedule.schedule_id,
                         amount: actualDaily,
                         count: newCount,

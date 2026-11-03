@@ -13,8 +13,8 @@ const LevelRoiScheduleSchema = new mongoose.Schema(
     package_amount: { type: Number, required: true },
     total_percentage: { type: Number, required: true }, // e.g. 10, 3, 2, 1, 1, 1, 1
     total_amount: { type: Number, required: true }, // package_amount * total_percentage / 100
-    daily_amount: { type: Number, required: true }, // total_amount / 50
-    target_days: { type: Number, default: 50 },
+    daily_amount: { type: Number, required: true }, // total_amount / 100
+    target_days: { type: Number, default: 100 },
     payout_count: { type: Number, default: 0 },
     total_paid: { type: Number, default: 0 },
     status: {
