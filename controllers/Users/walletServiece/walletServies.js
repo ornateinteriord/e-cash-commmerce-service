@@ -179,6 +179,19 @@ const getWalletOverview = async (req, res) => {
       })
       .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0), 0);
 
+    // Also include Margin Commissions (Level 1 Sponsor Bonus, Level 2 Vendor Bonus, etc.)
+    const marginCommissionsForOverview = await CommissionModel.find({
+      $or: [
+        { beneficiary_id: { $in: possibleIds } },
+        { userId: { $in: possibleIds } },
+        { user_id: { $in: possibleIds } }
+      ]
+    });
+    const totalMarginCommissionForOverview = marginCommissionsForOverview
+      .filter(c => String(c.status || "").toUpperCase() === "CREDITED" || String(c.status || "").toLowerCase() === "completed")
+      .reduce((acc, c) => acc + (parseFloat(c.commission_amount) || 0), 0);
+    const combinedProductLevelBalance = levelBenefits + totalMarginCommissionForOverview;
+
     const roiLevelBenefits = nonLoanTransactions
       .filter(tx =>
         (tx.transaction_type === "ROI Level Benefit" || tx.transaction_type === "Level Daily ROI") &&
@@ -338,7 +351,7 @@ const getWalletOverview = async (req, res) => {
         // Earning Wallet
         earningWalletBalance: (member.earning_wallet || 0).toFixed(2),
         // Product Level Wallet (Strictly Product Level Income transactions)
-        productLevelBalance: levelBenefits.toFixed(2),
+        productLevelBalance: combinedProductLevelBalance.toFixed(2),
         topUpTransactions: topUpTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         fixedDepositTransactions: transactions.filter(tx => (parseFloat(tx.fd_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('fixed deposit'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
         purchaseTransactions: transactions.filter(tx => (parseFloat(tx.pw_credit) > 0) || (tx.transaction_type && tx.transaction_type.toLowerCase().includes('purchase'))).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
@@ -1895,12 +1908,61 @@ const getProductLevelWalletOverview = async (req, res) => {
       return (isProductLevelIncome || isProductLevelWithdrawal) && !isExcluded;
     });
 
+    // Fetch margin commissions from CommissionModel (e.g. Level 1 Sponsor Bonus, Level 2 Vendor Bonus)
+    const marginCommissions = await CommissionModel.find({
+      $or: [
+        { beneficiary_id: { $in: possibleIds } },
+        { userId: { $in: possibleIds } },
+        { user_id: { $in: possibleIds } },
+        { member_id: { $in: possibleIds } }
+      ]
+    }).sort({ createdAt: -1 });
+
+    const mappedCommissions = marginCommissions.map(comm => {
+      const commDate = comm.transaction_date || comm.credited_at || comm.createdAt || new Date();
+      const commAmount = Number(comm.commission_amount || 0);
+      const isCredited = String(comm.status || "").toUpperCase() === "CREDITED" || String(comm.status || "").toLowerCase() === "completed";
+
+      return {
+        _id: comm._id,
+        transaction_id: comm.transaction_id || comm.commission_id,
+        tx_no: comm.commission_id || comm.transaction_id,
+        transaction_date: commDate,
+        createdAt: comm.createdAt || commDate,
+        transaction_type: comm.account_type || (comm.level ? `Level ${comm.level} Bonus (Order Margin)` : "Product Level Margin Commission"),
+        benefit_type: "Product Level Margin Commission",
+        description: comm.notes || `${comm.account_type || "Margin Commission"} (${comm.commission_rate || 5}%) for Order ${comm.transaction_id || ""}`,
+        gross_amount: commAmount,
+        net_amount: commAmount,
+        pw_credit: String(commAmount),
+        ew_credit: "0",
+        vw_credit: "0",
+        amount: commAmount,
+        commission_amount: commAmount,
+        status: isCredited ? "Completed" : (comm.status || "Completed"),
+        level: comm.level,
+        order_id: comm.transaction_id,
+        commission_rate: comm.commission_rate,
+        transaction_amount: comm.transaction_amount
+      };
+    });
+
+    const combinedTransactions = [...transactions, ...mappedCommissions].sort((a, b) => {
+      const dateA = new Date(a.transaction_date || a.createdAt || 0);
+      const dateB = new Date(b.transaction_date || b.createdAt || 0);
+      return dateB - dateA;
+    });
+
+    const totalCommissionIncome = mappedCommissions
+      .filter(comm => comm.status === "Completed")
+      .reduce((acc, comm) => acc + (parseFloat(comm.gross_amount) || 0), 0);
+
     const totalIncome = transactions
       .filter(tx => {
         const txType = (tx.transaction_type || "").toLowerCase();
         return !txType.includes("withdrawal") && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0) + totalCommissionIncome;
 
     const completedWithdrawals = transactions
       .filter(tx => {
@@ -1926,8 +1988,8 @@ const getProductLevelWalletOverview = async (req, res) => {
         totalIncome: totalIncome.toFixed(2),
         totalWithdrawal: completedWithdrawals.toFixed(2),
         pendingWithdrawals: pendingWithdrawals.toFixed(2),
-        transactionsCount: transactions.length,
-        transactions: transactions
+        transactionsCount: combinedTransactions.length,
+        transactions: combinedTransactions
       }
     });
   } catch (error) {
@@ -2004,9 +2066,20 @@ const productLevelWalletWithdraw = async (req, res) => {
       return (isProductLevelIncome || isProductLevelWithdrawal) && !isExcluded;
     });
 
+    const marginCommissionsForWithdraw = await CommissionModel.find({
+      $or: [
+        { beneficiary_id: actualMemberId },
+        { userId: actualMemberId },
+        { user_id: actualMemberId }
+      ]
+    });
+    const totalCommissionIncomeForWithdraw = marginCommissionsForWithdraw
+      .filter(c => String(c.status || "").toUpperCase() === "CREDITED" || String(c.status || "").toLowerCase() === "completed")
+      .reduce((acc, c) => acc + (parseFloat(c.commission_amount) || 0), 0);
+
     const totalIncome = levelTxs
       .filter(tx => !tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
-      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0) + totalCommissionIncomeForWithdraw;
 
     const completedWithdrawals = levelTxs
       .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")

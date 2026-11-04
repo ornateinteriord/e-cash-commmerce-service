@@ -73,7 +73,7 @@ const commissionSchema = new mongoose.Schema(
             type: Number,
             required: true,
             min: 1,
-            max: 7,
+            max: 50, // Supports up to 20 levels (and beyond)
         },
         // Status Tracking
         status: {

@@ -81,19 +81,19 @@ if (!introducer) {
 // Start with the direct introducer
 const hierarchy = [introducerId];
 
-// Add the introducer's hierarchy (up to 6 more levels for total of 7)
+// Add the introducer's hierarchy (up to 19 more levels for total of 20)
 if (introducer.introducer_hierarchy && introducer.introducer_hierarchy.length > 0) {
     // Filter out any duplicates - don't include introducerId again if it's already in their hierarchy
     const existingHierarchy = introducer.introducer_hierarchy
         .filter(id => id !== introducerId && id !== String(introducerId)) // Remove duplicates
-        .slice(0, 6);
+        .slice(0, 19);
     hierarchy.push(...existingHierarchy);
 }
 
 // Ensure no duplicates in final hierarchy (just in case)
 const uniqueHierarchy = [...new Set(hierarchy.map(String))];
 
-return uniqueHierarchy.slice(0, 7); // Max 7 levels
+return uniqueHierarchy.slice(0, 20); // Max 20 levels
     } catch (error) {
     console.error("Error building introducer hierarchy:", error);
     return introducerId ? [introducerId] : [];
@@ -274,7 +274,7 @@ const commissions = [];
 // Track which beneficiaries have already received commission to avoid duplicates
 const processedBeneficiaries = new Set();
 
-for (let i = 0; i < Math.min(hierarchy.length, 7); i++) {
+for (let i = 0; i < Math.min(hierarchy.length, 20); i++) {
     const level = i + 1;
     const beneficiaryId = hierarchy[i];
 

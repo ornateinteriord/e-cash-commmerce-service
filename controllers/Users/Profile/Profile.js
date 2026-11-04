@@ -173,7 +173,7 @@ const getMemberDetails = async (req, res) => {
 
       totalEarnings = levelBenefits + roiLevelBenefits + directBenefits + repaymentCommission + roiBenefits + singleLineIncome;
     }
-    const canReinvest = hasInvestment && totalPackages > 0 && totalEarnings >= (2 * totalPackages);
+    const canReinvest = true; // Vendors can load funds and re-invest freely anytime
 
     // Add registration data to response
     const responseData = {

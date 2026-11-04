@@ -822,14 +822,14 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       const isActive = String(upline.sponsor_status || "").toLowerCase() === "active";
       const sponsorRank = Number(upline.sponsor_level) || 0;
 
-      // Condition: Active AND completed 3X business / 3 levels (sponsorRank >= 3)
+      // Level 1 direct sponsor always qualifies when active; Higher levels qualify if sponsor has unlocked that level
       if (!isActive) {
         console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is inactive.`);
         continue;
       }
 
-      if (sponsorRank < 3) {
-        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Rank Level ${sponsorRank} (Requires 3X business / Level >= 3).`);
+      if (upline.level > 1 && sponsorRank < upline.level) {
+        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Rank Level ${sponsorRank} (Requires Level >= ${upline.level}).`);
         continue;
       }
 
