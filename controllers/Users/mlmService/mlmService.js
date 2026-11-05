@@ -131,7 +131,9 @@ const findUplineSponsors = async (memberId, maxLevels = 15) => {
 const calculateCommissions = async (newMemberId, directSponsorId, specificAmount = null, pkgType = "Base") => {
   try {
     // Find the new member
-    const newMember = await MemberModel.findOne({ Member_id: newMemberId });
+    const newMember = await MemberModel.findOne({
+      $or: [{ Member_id: newMemberId }, { member_id: newMemberId }]
+    });
     if (!newMember) {
       console.error(`❌ New member ${newMemberId} not found for commission calculation`);
       return [];
@@ -189,8 +191,8 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
         }
       }
 
-      // --- 2. Levels 2 to 10: PRODUCT LEVEL INCOME (CHECK SPONSOR'S LEVEL) ---
-      // User Rules (Based on Member's LEVEL badge in Dashboard):
+      // --- 2. Levels 2 to 10: PRODUCT LEVEL INCOME ---
+      // Condition disabled as per user request:
       // * for 2-5 level commission: min Level 4 compulsory (sponsor.level >= 4)
       // * for 6-10 level commission: min Level 8 compulsory (sponsor.level >= 8)
       const levelPercentage = levelBenefitsPercentages[upline.level] || 0;
@@ -198,6 +200,7 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
         // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
         const sponsorLevel = Number(upline.sponsor_level) || 0;
 
+        /* DISABLED FOR NOW AS PER USER REQUEST
         if (upline.level >= 2 && upline.level <= 5 && sponsorLevel < 4) {
           console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level 4). Commission skipped.`);
           continue;
@@ -207,6 +210,7 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
           console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level 8). Commission skipped.`);
           continue;
         }
+        */
 
         const levelAmount = Number(((packageValue * levelPercentage) / 100).toFixed(2));
         if (levelAmount > 0) {
@@ -273,8 +277,9 @@ const processCommissions = async (commissions, session = null) => {
         }
 
         // LEVEL 1: DIRECT COMMISSION IS ADDED DIRECTLY (NO LEVEL CHECK)
-        // LEVEL 2-5: Min Level 4 compulsory (sponsor.level >= 4)
-        // LEVEL 6-10: Min Level 8 compulsory (sponsor.level >= 8)
+        // LEVEL 2-5: Min Level 4 compulsory (sponsor.level >= 4) [DISABLED AS PER USER REQUEST]
+        // LEVEL 6-10: Min Level 8 compulsory (sponsor.level >= 8) [DISABLED AS PER USER REQUEST]
+        /* DISABLED FOR NOW AS PER USER REQUEST
         if (commission.level > 1) {
           // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
           const sponsorLevel = Number(sponsor.level) || 0;
@@ -301,6 +306,7 @@ const processCommissions = async (commissions, session = null) => {
             continue;
           }
         }
+        */
 
         // Prevent duplicate commission for the same buyer, level and amount processed within the last 10 minutes
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -455,6 +461,7 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
     await transaction.save({ session });
 
     // User Rule: Referral & Level income credited ONLY to Earning Wallet (not product wallet or first normal wallet)
+    const sponsorLookup = { $or: [{ Member_id: memberId }, { member_id: memberId }] };
     await MemberModel.findOneAndUpdate(
       sponsorLookup,
       { 
@@ -568,8 +575,9 @@ const getUplineTree = async (memberIdOrReq, maxLevelsOrRes = 15) => {
       const sponsorLvl = Number(u.sponsor_level) || 0;
       const directCount = Number(u.direct_referrals_count) || 0;
       let eligible = isActive;
-      if (u.level >= 2 && u.level <= 5 && directCount < 4) eligible = false;
-      if (u.level >= 6 && u.level <= 10 && directCount < 8) eligible = false;
+      // Disabled for now as per user request:
+      // if (u.level >= 2 && u.level <= 5 && directCount < 4) eligible = false;
+      // if (u.level >= 6 && u.level <= 10 && directCount < 8) eligible = false;
 
       return {
         level: u.level,
