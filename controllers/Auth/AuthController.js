@@ -185,8 +185,13 @@ const signup = async (req, res) => {
       message: "Signup successful. Credentials sent to email.",
       user: {
         Member_id: newMember.Member_id,
+        member_code: newMember.member_code,
+        user_id: newMember.member_code,
+        sponsor_id: newMember.sponsor_id,
+        sponsor_name: newMember.Sponsor_name,
         email: newMember.email,
-        Name: newMember.Name
+        Name: newMember.Name,
+        mobileno: newMember.mobileno,
       },
     });
 
@@ -455,6 +460,32 @@ const verifyRegistrationOTP = async (req, res) => {
   }
 };
 
+
+const checkMobile = async (req, res) => {
+  try {
+    const { mobileno } = req.body;
+    const cleanMobile = String(mobileno || "").replace(/\D/g, "").slice(0, 10);
+    if (!cleanMobile || cleanMobile.length !== 10) {
+      return res.status(400).json({ success: false, message: "Please enter a valid 10-digit mobile number." });
+    }
+
+    const existing = await MemberModel.findOne({
+      $or: [
+        { Member_id: cleanMobile },
+        { mobileno: cleanMobile }
+      ]
+    });
+    if (existing) {
+      return res.status(400).json({ success: false, message: "This mobile number is already registered. Please login instead." });
+    }
+
+    return res.status(200).json({ success: true, message: "Mobile number available" });
+  } catch (error) {
+    console.error("checkMobile error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
 module.exports = {
   signup,
   getSponsorDetails,
@@ -462,5 +493,6 @@ module.exports = {
   login,
   impersonate,
   sendRegistrationOTP,
+  checkMobile,
   verifyRegistrationOTP,
 };
