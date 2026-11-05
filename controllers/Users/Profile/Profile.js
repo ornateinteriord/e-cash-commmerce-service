@@ -306,6 +306,7 @@ const activateMemberPackage = async (req, res) => {
     }
 
     // 2. ✅ CREATE "DAY 0" PAYOUT AND TRANSACTION (₹0 records)
+    const targetDays = updatedMember.roi_payout_target || 400;
     const payoutId = Date.now() + Math.floor(Math.random() * 1000);
     const payout = new PayoutModel({
       payout_id: payoutId,
@@ -315,7 +316,7 @@ const activateMemberPackage = async (req, res) => {
       ref_no: `ACT-P-${actualMemberId}-0`,
       amount: 0,
       count: 0,
-      days: 300,
+      days: targetDays,
       status: "Approved",
       description: "Primary Package Activation"
     });
@@ -326,7 +327,7 @@ const activateMemberPackage = async (req, res) => {
       member_id: actualMemberId,
       Name: updatedMember.Name || updatedMember.name,
       mobileno: updatedMember.mobileno || updatedMember.contactno,
-      description: `Package Activation – Day 0/300 (₹${amount} pkg)`,
+      description: `Package Activation – Day 0/${targetDays} (₹${amount} pkg)`,
       transaction_type: "ROI Payout",
       ew_credit: "0",
       ew_debit: "0",

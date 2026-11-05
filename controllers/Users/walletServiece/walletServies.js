@@ -1341,6 +1341,8 @@ const getVendorWalletOverview = async (req, res) => {
     const maxWithdrawalLimit = totalPackagePurchased * 2; // 2x package amount for Sale Value Wallet
     const totalWithdrawn = completedWithdrawals + pendingWithdrawals;
     const remainingWithdrawalLimit = Math.max(0, maxWithdrawalLimit - totalWithdrawn);
+    // User Rule: Only ROI earning amount can be withdrawn, NOT the package amount
+    const availableRoiWithdrawal = Math.max(0, totalDailyRoiAndIncentive - totalWithdrawn);
 
     await MemberModel.updateOne(
       { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
@@ -1358,6 +1360,7 @@ const getVendorWalletOverview = async (req, res) => {
         totalWithdrawn: totalWithdrawn.toFixed(2),
         remainingWithdrawalLimit: remainingWithdrawalLimit.toFixed(2),
         totalDailyRoi: totalDailyRoiAndIncentive.toFixed(2),
+        availableRoiWithdrawal: availableRoiWithdrawal.toFixed(2),
         totalIncome: totalIncome.toFixed(2),
         totalWithdrawal: completedWithdrawals.toFixed(2),
         pendingWithdrawals: pendingWithdrawals.toFixed(2),
@@ -1435,6 +1438,34 @@ const vendorWalletWithdraw = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Withdrawal exceeds 2x package limit. Maximum remaining allowed is ₹${remainingLimit.toFixed(2)} (Total 2x Limit: ₹${maxLimit.toFixed(2)}, Already Withdrawn: ₹${totalWithdrawn.toFixed(2)})`
+      });
+    }
+
+    // User Rule: Only ROI earnings are eligible for withdrawal; Package amount is locked
+    const allMemberTxs = await TransactionModel.find({
+      member_id: { $in: [actualMemberId, memberId, String(actualMemberId).replace('BMS', '')] }
+    });
+    const totalDailyRoi = allMemberTxs.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+      return (
+        txType.includes("daily incentive") ||
+        desc.includes("daily incentive") ||
+        txType.includes("roi") ||
+        desc.includes("roi") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi")
+      ) && !txType.includes("withdrawal") && !txType.includes("invest") && tx.status === "Completed";
+    }).reduce((acc, tx) => {
+      let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
+      return acc + (val || 0);
+    }, 0);
+
+    const availableRoiWithdrawal = Math.max(0, totalDailyRoi - totalWithdrawn);
+    if (withdrawalAmount > availableRoiWithdrawal) {
+      return res.status(400).json({
+        success: false,
+        message: `Withdrawal not allowed. You can only withdraw from your ROI Earnings (Available: ₹${availableRoiWithdrawal.toFixed(2)}). Package investment amount (₹${totalPackagePurchased.toFixed(2)}) cannot be withdrawn.`
       });
     }
 

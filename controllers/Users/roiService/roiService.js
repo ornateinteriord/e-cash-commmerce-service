@@ -387,7 +387,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     const descText = `Level ${schedule.level} Daily ROI (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Member ${schedule.from_member_id}`;
 
-                    // 1. Create Transaction (vw_credit vendor wallet balance)
+                    // 1. Create Transaction (vw_credit sale value / vendor wallet balance)
                     const levelRoiTx = new TransactionModel({
                         transaction_id: txId,
                         transaction_date: payoutDate,
@@ -427,7 +427,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     await Promise.all([levelRoiTx.save(), payoutRecord.save()]);
 
-                    // 3. Update Sponsor Vendor Wallet Balance
+                    // 3. Update Sponsor Sale Value Wallet (vendor_wallet) Balance
                     await MemberModel.updateOne(
                         { $or: [{ Member_id: schedule.sponsor_id }, { member_id: schedule.sponsor_id }] },
                         { $inc: { vendor_wallet: actualDaily } }
