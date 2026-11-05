@@ -156,6 +156,8 @@ const getWalletOverview = async (req, res) => {
         const benefit = (tx.benefit_type || "").toLowerCase();
 
         const isLevel = (
+          txType.includes("level income") ||
+          desc.includes("level income") ||
           desc.includes("product level") ||
           txType.includes("product level") ||
           desc.includes("level benefit") ||
@@ -1585,6 +1587,8 @@ const getEarningWalletOverview = async (req, res) => {
       const isEarningIncome = (
         txType.includes("referral") ||
         desc.includes("referral") ||
+        txType.includes("level income") ||
+        desc.includes("level income") ||
         txType.includes("product level") ||
         desc.includes("product level") ||
         txType.includes("level benefit") ||
@@ -1750,6 +1754,8 @@ const earningWalletWithdraw = async (req, res) => {
       const isEarningIncome = (
         txType.includes("referral") ||
         desc.includes("referral") ||
+        txType.includes("level income") ||
+        desc.includes("level income") ||
         txType.includes("product level") ||
         desc.includes("product level") ||
         txType.includes("level benefit") ||

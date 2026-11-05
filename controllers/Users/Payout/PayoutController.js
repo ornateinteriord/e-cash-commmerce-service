@@ -556,7 +556,28 @@ async function cleanDuplicateReferralBonus(req = null, res = null) {
 
 async function syncAllMissingCommissions(req = null, res = null) {
   try {
-    console.log("🔄 [SYNC] Starting sync of missing commissions for all active members...");
+    const isForce = (req?.query?.force === "true" || req?.query?.recalculate === "true" || req?.body?.force === true || req?.body?.recalculate === true);
+    console.log(`🔄 [SYNC] Starting sync of commissions (force/recalculate: ${isForce})...`);
+
+    if (isForce) {
+      console.log("🧹 [SYNC] Recalculate enabled: removing old referral & level commission transactions and payouts...");
+      await TransactionModel.deleteMany({
+        $or: [
+          { transaction_type: { $in: ["Referral Bonus", "Product Level Income", "Level Income"] } },
+          { description: { $regex: /referral|level \d+ income|product level/i } }
+        ]
+      });
+      await PayoutModel.deleteMany({
+        $or: [
+          { payout_type: { $regex: /referral|level \d+ income|product level/i } }
+        ]
+      });
+      const CommissionModel = require("../../../models/commission.model");
+      await CommissionModel.deleteMany({
+        account_type_id: "MLM_LEVEL_INCOME"
+      });
+      console.log("✅ [SYNC] Old commission records cleared.");
+    }
 
     const activeMembers = await MemberModel.find({
       $or: [
@@ -586,36 +607,75 @@ async function syncAllMissingCommissions(req = null, res = null) {
 
       if (packageAmount <= 0) continue;
 
-      // Check if direct referral commission was already credited for this member
-      const existingTx = await TransactionModel.findOne({
-        $or: [
-          { related_member_id: memberId },
-          { related_member_name: member.Name || member.name },
-          { description: new RegExp(`member ${memberId}`, 'i') }
-        ],
-        $or: [
-          { transaction_type: { $regex: /referral/i } },
-          { description: { $regex: /referral/i } }
-        ]
-      });
+      // Update sponsor referrals tracking
+      await updateSponsorReferrals(sponsorId, memberId).catch(e => console.error("Update referral err:", e));
 
-      if (existingTx) {
-        continue;
+      // Calculate all 10 levels of commissions without restriction
+      const commissions = await calculateCommissions(memberId, sponsorId, packageAmount);
+      if (!commissions || commissions.length === 0) continue;
+
+      // Filter out only commissions that already exist (unless force is true)
+      let commissionsToProcess = commissions;
+      if (!isForce) {
+        const missingCommissions = [];
+        for (const comm of commissions) {
+          const existingLevelTx = await TransactionModel.findOne({
+            member_id: { $in: [comm.sponsor_id, comm.Sponsor_code].filter(Boolean) },
+            level: comm.level,
+            $or: [
+              { related_member_id: memberId },
+              { related_member_name: member.Name || member.name },
+              { description: new RegExp(`member ${memberId}`, 'i') }
+            ]
+          });
+          if (!existingLevelTx) {
+            missingCommissions.push(comm);
+          }
+        }
+        commissionsToProcess = missingCommissions;
       }
 
-      console.log(`⚡ [SYNC] Calculating missing commissions for Member: ${memberId} (Pkg: ₹${packageAmount}, Sponsor: ${sponsorId})...`);
-
-      const commissions = await calculateCommissions(memberId, sponsorId, packageAmount);
-      if (commissions.length > 0) {
-        const results = await processCommissions(commissions);
+      if (commissionsToProcess.length > 0) {
+        console.log(`⚡ [SYNC] Processing ${commissionsToProcess.length} commissions for Member: ${memberId} (Pkg: ₹${packageAmount})...`);
+        const results = await processCommissions(commissionsToProcess);
         syncedCount++;
         details.push({
           memberId,
           packageAmount,
           sponsorId,
-          commissionsCount: commissions.length,
+          commissionsCount: commissionsToProcess.length,
           results
         });
+      }
+    }
+
+    // When force recalculation runs, sync each member's earning_wallet balance with actual completed transactions
+    if (isForce) {
+      const allMembers = await MemberModel.find({});
+      for (const m of allMembers) {
+        const mId = m.Member_id || m.member_id;
+        const mNumeric = parseInt(mId.replace(/[^0-9]/g, ''), 10);
+        const pad5 = !isNaN(mNumeric) ? String(mNumeric).padStart(5, '0') : mId;
+        const pad6 = !isNaN(mNumeric) ? String(mNumeric).padStart(6, '0') : mId;
+        const possibleIds = [mId, mId.replace('BMS', ''), `BMS${pad5}`, `BMS${pad6}`, pad5, pad6];
+
+        const mCredits = await TransactionModel.find({
+          member_id: { $in: possibleIds },
+          status: "Completed",
+          $or: [
+            { transaction_type: { $in: ["Referral Bonus", "Product Level Income", "Level Income"] } },
+            { description: { $regex: /referral|level \d+ income|product level/i } }
+          ]
+        });
+        const totalCredited = mCredits.reduce((sum, tx) => sum + (parseFloat(tx.ew_credit) || 0), 0);
+        const mDebits = await TransactionModel.find({
+          member_id: { $in: possibleIds },
+          transaction_type: { $regex: /earning withdrawal/i },
+          status: { $in: ["Completed", "Pending", "Processing"] }
+        });
+        const totalDebited = mDebits.reduce((sum, tx) => sum + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || 0), 0);
+        const newBalance = Math.max(0, totalCredited - totalDebited);
+        await MemberModel.updateOne({ _id: m._id }, { $set: { earning_wallet: newBalance } });
       }
     }
 

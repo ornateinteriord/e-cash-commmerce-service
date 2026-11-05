@@ -226,8 +226,8 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             amount: levelAmount,
             percentage: levelPercentage,
             packageValue: packageValue,
-            payout_type: `Product Level ${upline.level} Income`,
-            description: `Product Level Income - Level ${upline.level} (${levelPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
+            payout_type: `Level ${upline.level} Income`,
+            description: `Level ${upline.level} Income (${levelPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
           console.log(`✅ [LEVEL BONUS] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${levelAmount} (${levelPercentage}%)`);
@@ -442,7 +442,7 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       mobileno: sponsor_mobileno,
       reference_no: (payout_id || '').toString(),
       description: payout_type,
-      transaction_type: isReferral ? "Referral Bonus" : "Product Level Income",
+      transaction_type: isReferral ? "Referral Bonus" : "Level Income",
       vw_credit: "0",
       ew_credit: commissionAmount.toString(),
       pw_credit: "0",
