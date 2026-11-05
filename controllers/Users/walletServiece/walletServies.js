@@ -148,22 +148,21 @@ const getWalletOverview = async (req, res) => {
       .filter(tx => tx.transaction_type !== "Withdrawal" && tx.status === "Completed")
       .reduce((acc, tx) => acc + (parseFloat(tx.ew_debit) || 0), 0);
 
-    // Product Level Income: STRICTLY only transactions with "Product Level" or Level Income in description / type
+    // MLM Level Benefits (for Earning Wallet / Level breakdown):
     const levelBenefits = nonLoanTransactions
       .filter(tx => {
         const txType = (tx.transaction_type || "").toLowerCase();
         const desc = (tx.description || "").toLowerCase();
         const benefit = (tx.benefit_type || "").toLowerCase();
 
-        const isProductLevel = (
+        const isLevel = (
           desc.includes("product level") ||
           txType.includes("product level") ||
           desc.includes("level benefit") ||
           desc.includes("level bonus") ||
           txType.includes("level benefit") ||
           txType.includes("level bonus") ||
-          benefit.includes("level income") ||
-          parseFloat(tx.pw_credit) > 0
+          benefit.includes("level income")
         );
 
         const isExcluded = (
@@ -172,25 +171,80 @@ const getWalletOverview = async (req, res) => {
           desc.includes("referral") ||
           txType.includes("referral") ||
           desc.includes("daily incentive") ||
-          txType.includes("daily incentive")
+          txType.includes("daily incentive") ||
+          desc.includes("order margin") ||
+          txType.includes("order margin")
         );
 
-        return isProductLevel && !isExcluded && tx.status === "Completed";
+        return isLevel && !isExcluded && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0), 0);
+      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || parseFloat(tx.vw_credit) || parseFloat(tx.uw_credit) || parseFloat(tx.fd_credit) || 0), 0);
 
-    // Also include Margin Commissions (Level 1 Sponsor Bonus, Level 2 Vendor Bonus, etc.)
+    // Product Level Wallet (Order Margin ONLY): Strictly transactions with "order margin" or "product level bonus (order margin)"
+    const orderMarginTxs = nonLoanTransactions.filter(tx => {
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const desc = (tx.description || "").toLowerCase();
+
+      const isOrderMargin = (
+        desc.includes("order margin") ||
+        txType.includes("order margin") ||
+        desc.includes("product level bonus (order margin)") ||
+        txType.includes("product level bonus (order margin)")
+      );
+
+      const isExcluded = (
+        desc.includes("roi") ||
+        txType.includes("roi") ||
+        desc.includes("referral") ||
+        txType.includes("referral") ||
+        desc.includes("daily incentive") ||
+        txType.includes("daily incentive") ||
+        txType === "vendor withdrawal" ||
+        (txType.includes("product level") && !desc.includes("order margin") && !txType.includes("order margin")) ||
+        desc.includes("investment") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus")
+      );
+
+      return isOrderMargin && !isExcluded && tx.status === "Completed";
+    });
+
+    const productLevelIncome = orderMarginTxs.reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || parseFloat(tx.gross_amount) || 0), 0);
+
+    // Also include true Order Margin commissions from CommissionModel (exclude MLM level and referral)
     const marginCommissionsForOverview = await CommissionModel.find({
       $or: [
         { beneficiary_id: { $in: possibleIds } },
         { userId: { $in: possibleIds } },
         { user_id: { $in: possibleIds } }
-      ]
+      ],
+      account_type_id: { $ne: "MLM_LEVEL_INCOME" },
+      transaction_id: { $not: /^T-L-/i },
+      account_type: { $not: /referral|product level|level benefit|level bonus/i }
     });
+
     const totalMarginCommissionForOverview = marginCommissionsForOverview
-      .filter(c => String(c.status || "").toUpperCase() === "CREDITED" || String(c.status || "").toLowerCase() === "completed")
+      .filter(c => {
+        const accType = (c.account_type || "").toLowerCase();
+        const txId = (c.transaction_id || "");
+        if (c.account_type_id === "MLM_LEVEL_INCOME" || txId.startsWith("T-L-")) return false;
+        if (accType.includes("referral") || (accType.includes("product level") && !accType.includes("order margin"))) {
+          return false;
+        }
+        return String(c.status || "").toUpperCase() === "CREDITED" || String(c.status || "").toLowerCase() === "completed";
+      })
       .reduce((acc, c) => acc + (parseFloat(c.commission_amount) || 0), 0);
-    const combinedProductLevelBalance = levelBenefits + totalMarginCommissionForOverview;
+
+    const productLevelWithdrawals = nonLoanTransactions
+      .filter(tx => (
+        tx.transaction_type?.toLowerCase().includes("product level withdrawal") ||
+        (tx.description?.toLowerCase().includes("product level") && tx.transaction_type?.toLowerCase().includes("withdrawal"))
+      ) && (tx.status === "Completed" || tx.status === "Pending" || tx.status === "Processing"))
+      .reduce((acc, tx) => acc + (parseFloat(tx.gross_amount) || parseFloat(tx.ew_debit) || parseFloat(tx.pw_debit) || 0), 0);
+
+    const combinedProductLevelBalance = Math.max(0, (productLevelIncome + totalMarginCommissionForOverview) - productLevelWithdrawals);
 
     const roiLevelBenefits = nonLoanTransactions
       .filter(tx =>
@@ -1873,19 +1927,14 @@ const getProductLevelWalletOverview = async (req, res) => {
     const transactions = allTxs.filter(tx => {
       const txType = (tx.transaction_type || "").toLowerCase();
       const desc = (tx.description || "").toLowerCase();
-      const benefit = (tx.benefit_type || "").toLowerCase();
 
-      const isProductLevelIncome = (
-        desc.includes("product level") ||
-        txType.includes("product level") ||
-        desc.includes("product listing") ||
-        txType.includes("product listing") ||
-        desc.includes("level benefit") ||
-        desc.includes("level bonus") ||
-        txType.includes("level benefit") ||
-        txType.includes("level bonus") ||
-        benefit.includes("level income") ||
-        parseFloat(tx.pw_credit) > 0
+      // User Rule: Product Level Wallet is ONLY for "Product Level Bonus (Order Margin)"
+      // Direct referral and package level income must NOT show here (they belong in Earning Wallet).
+      const isOrderMarginIncome = (
+        desc.includes("order margin") ||
+        txType.includes("order margin") ||
+        desc.includes("product level bonus (order margin)") ||
+        txType.includes("product level bonus (order margin)")
       );
 
       const isProductLevelWithdrawal = (
@@ -1900,23 +1949,43 @@ const getProductLevelWalletOverview = async (req, res) => {
         txType.includes("referral") ||
         desc.includes("daily incentive") ||
         txType.includes("daily incentive") ||
-        txType === "vendor withdrawal"
+        txType === "vendor withdrawal" ||
+        // Exclude MLM package activation level income
+        (txType.includes("product level") && !desc.includes("order margin") && !txType.includes("order margin")) ||
+        desc.includes("investment") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus")
       );
 
-      return (isProductLevelIncome || isProductLevelWithdrawal) && !isExcluded;
+      return (isOrderMarginIncome || isProductLevelWithdrawal) && !isExcluded;
     });
 
-    // Fetch margin commissions from CommissionModel (e.g. Level 1 Sponsor Bonus, Level 2 Vendor Bonus)
+    // Fetch ONLY true order margin commissions from CommissionModel (exclude MLM level income and referral)
     const marginCommissions = await CommissionModel.find({
       $or: [
         { beneficiary_id: { $in: possibleIds } },
         { userId: { $in: possibleIds } },
         { user_id: { $in: possibleIds } },
         { member_id: { $in: possibleIds } }
-      ]
+      ],
+      account_type_id: { $ne: "MLM_LEVEL_INCOME" },
+      transaction_id: { $not: /^T-L-/i },
+      account_type: { $not: /referral|product level|level benefit|level bonus/i }
     }).sort({ createdAt: -1 });
 
-    const mappedCommissions = marginCommissions.map(comm => {
+    const mappedCommissions = marginCommissions
+      .filter(comm => {
+        const accType = (comm.account_type || "").toLowerCase();
+        const txId = (comm.transaction_id || "");
+        if (comm.account_type_id === "MLM_LEVEL_INCOME" || txId.startsWith("T-L-")) return false;
+        if (accType.includes("referral") || (accType.includes("product level") && !accType.includes("order margin"))) {
+          return false;
+        }
+        return true;
+      })
+      .map(comm => {
       const commDate = comm.transaction_date || comm.credited_at || comm.createdAt || new Date();
       const commAmount = Number(comm.commission_amount || 0);
       const isCredited = String(comm.status || "").toUpperCase() === "CREDITED" || String(comm.status || "").toLowerCase() === "completed";
@@ -1927,9 +1996,9 @@ const getProductLevelWalletOverview = async (req, res) => {
         tx_no: comm.commission_id || comm.transaction_id,
         transaction_date: commDate,
         createdAt: comm.createdAt || commDate,
-        transaction_type: comm.account_type || (comm.level ? `Level ${comm.level} Bonus (Order Margin)` : "Product Level Margin Commission"),
-        benefit_type: "Product Level Margin Commission",
-        description: comm.notes || `${comm.account_type || "Margin Commission"} (${comm.commission_rate || 5}%) for Order ${comm.transaction_id || ""}`,
+        transaction_type: "Product Level Bonus (Order Margin)",
+        benefit_type: "Product Level Bonus (Order Margin)",
+        description: "Product Level Bonus (Order Margin)",
         gross_amount: commAmount,
         net_amount: commAmount,
         pw_credit: String(commAmount),
@@ -1945,22 +2014,33 @@ const getProductLevelWalletOverview = async (req, res) => {
       };
     });
 
-    const combinedTransactions = [...transactions, ...mappedCommissions].sort((a, b) => {
+    const normalizedTransactions = transactions.map(tx => {
+      const txObj = tx.toObject ? tx.toObject() : { ...tx };
+      const txType = (txObj.transaction_type || "").toLowerCase();
+      const isWithdrawal = txType.includes("withdrawal");
+      return {
+        ...txObj,
+        description: isWithdrawal ? (txObj.description || "Product Level Withdrawal") : "Product Level Bonus (Order Margin)",
+        transaction_type: isWithdrawal ? "Product Level Withdrawal" : "Product Level Bonus (Order Margin)"
+      };
+    });
+
+    const combinedTransactions = [...normalizedTransactions, ...mappedCommissions].sort((a, b) => {
       const dateA = new Date(a.transaction_date || a.createdAt || 0);
       const dateB = new Date(b.transaction_date || b.createdAt || 0);
       return dateB - dateA;
     });
 
     const totalCommissionIncome = mappedCommissions
-      .filter(comm => comm.status === "Completed")
-      .reduce((acc, comm) => acc + (parseFloat(comm.gross_amount) || 0), 0);
+      .filter(comm => comm.status === "Completed" || comm.status === "CREDITED")
+      .reduce((acc, comm) => acc + (parseFloat(comm.gross_amount) || parseFloat(comm.commission_amount) || 0), 0);
 
     const totalIncome = transactions
       .filter(tx => {
         const txType = (tx.transaction_type || "").toLowerCase();
         return !txType.includes("withdrawal") && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0) + totalCommissionIncome;
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0) + totalCommissionIncome;
 
     const completedWithdrawals = transactions
       .filter(tx => {
@@ -2033,19 +2113,13 @@ const productLevelWalletWithdraw = async (req, res) => {
     const levelTxs = allTxs.filter(tx => {
       const txType = (tx.transaction_type || "").toLowerCase();
       const desc = (tx.description || "").toLowerCase();
-      const benefit = (tx.benefit_type || "").toLowerCase();
 
-      const isProductLevelIncome = (
-        desc.includes("product level") ||
-        txType.includes("product level") ||
-        desc.includes("product listing") ||
-        txType.includes("product listing") ||
-        desc.includes("level benefit") ||
-        desc.includes("level bonus") ||
-        txType.includes("level benefit") ||
-        txType.includes("level bonus") ||
-        benefit.includes("level income") ||
-        parseFloat(tx.pw_credit) > 0
+      // User Rule: Product Level Wallet is ONLY for "Product Level Bonus (Order Margin)"
+      const isOrderMarginIncome = (
+        desc.includes("order margin") ||
+        txType.includes("order margin") ||
+        desc.includes("product level bonus (order margin)") ||
+        txType.includes("product level bonus (order margin)")
       );
       const isProductLevelWithdrawal = (
         txType.includes("product level withdrawal") ||
@@ -2058,10 +2132,16 @@ const productLevelWalletWithdraw = async (req, res) => {
         txType.includes("referral") ||
         desc.includes("daily incentive") ||
         txType.includes("daily incentive") ||
-        txType === "vendor withdrawal"
+        txType === "vendor withdrawal" ||
+        (txType.includes("product level") && !desc.includes("order margin") && !txType.includes("order margin")) ||
+        desc.includes("investment") ||
+        desc.includes("level benefit") ||
+        desc.includes("level bonus") ||
+        txType.includes("level benefit") ||
+        txType.includes("level bonus")
       );
 
-      return (isProductLevelIncome || isProductLevelWithdrawal) && !isExcluded;
+      return (isOrderMarginIncome || isProductLevelWithdrawal) && !isExcluded;
     });
 
     const marginCommissionsForWithdraw = await CommissionModel.find({
@@ -2069,15 +2149,26 @@ const productLevelWalletWithdraw = async (req, res) => {
         { beneficiary_id: actualMemberId },
         { userId: actualMemberId },
         { user_id: actualMemberId }
-      ]
+      ],
+      account_type_id: { $ne: "MLM_LEVEL_INCOME" },
+      transaction_id: { $not: /^T-L-/i },
+      account_type: { $not: /referral|product level|level benefit|level bonus/i }
     });
     const totalCommissionIncomeForWithdraw = marginCommissionsForWithdraw
-      .filter(c => String(c.status || "").toUpperCase() === "CREDITED" || String(c.status || "").toLowerCase() === "completed")
+      .filter(c => {
+        const accType = (c.account_type || "").toLowerCase();
+        const txId = (c.transaction_id || "");
+        if (c.account_type_id === "MLM_LEVEL_INCOME" || txId.startsWith("T-L-")) return false;
+        if (accType.includes("referral") || (accType.includes("product level") && !accType.includes("order margin"))) {
+          return false;
+        }
+        return String(c.status || "").toUpperCase() === "CREDITED" || String(c.status || "").toLowerCase() === "completed";
+      })
       .reduce((acc, c) => acc + (parseFloat(c.commission_amount) || 0), 0);
 
     const totalIncome = levelTxs
       .filter(tx => !tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
-      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0) + totalCommissionIncomeForWithdraw;
+      .reduce((acc, tx) => acc + (parseFloat(tx.pw_credit) || 0) + (parseFloat(tx.gross_amount) || 0), 0) + totalCommissionIncomeForWithdraw;
 
     const completedWithdrawals = levelTxs
       .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
