@@ -503,7 +503,7 @@ async function cleanDuplicateReferralBonus(req = null, res = null) {
     const specificTxId = (req && req.params && req.params.txId) || (req && req.query && req.query.txId);
     let cleanedList = [];
 
-    // If a specific transaction ID is provided
+    // If a specific transaction ID is provided, delete only that specific transaction
     if (specificTxId) {
       const dupTx = await TransactionModel.findOne({
         $or: [
@@ -513,13 +513,12 @@ async function cleanDuplicateReferralBonus(req = null, res = null) {
       });
 
       if (dupTx) {
-        const amount = Number(dupTx.vw_credit || dupTx.ew_credit || dupTx.net_amount || 5000);
+        const amount = Number(dupTx.vw_credit || dupTx.ew_credit || dupTx.net_amount || 0);
         const memberId = dupTx.member_id;
 
-        // Deduct from vendor_wallet and earning_wallet
         await MemberModel.updateOne(
           { $or: [{ Member_id: memberId }, { member_id: memberId }] },
-          { $inc: { vendor_wallet: -amount, earning_wallet: -amount } }
+          { $inc: { earning_wallet: -amount } }
         );
 
         if (dupTx.reference_no) {
@@ -532,83 +531,8 @@ async function cleanDuplicateReferralBonus(req = null, res = null) {
         cleanedList.push(dupTx.transaction_id);
       }
     } else {
-      // General scan: check known duplicate ID: T-L-1793595256122-987
-      const knownDup = await TransactionModel.findOne({
-        $or: [
-          { transaction_id: "T-L-1793595256122-987" },
-          { transaction_id: { $regex: "1793595256122" } }
-        ]
-      });
-
-      if (knownDup) {
-        const amount = Number(knownDup.vw_credit || knownDup.ew_credit || knownDup.net_amount || 5000);
-        const memberId = knownDup.member_id;
-
-        await MemberModel.updateOne(
-          { $or: [{ Member_id: memberId }, { member_id: memberId }] },
-          { $inc: { vendor_wallet: -amount, earning_wallet: -amount } }
-        );
-
-        if (knownDup.reference_no) {
-          await PayoutModel.deleteMany({ payout_id: knownDup.reference_no });
-          const CommissionModel = require("../../../models/commission.model");
-          await CommissionModel.deleteMany({ transaction_id: knownDup.transaction_id });
-        }
-
-        await TransactionModel.deleteOne({ _id: knownDup._id });
-        cleanedList.push(knownDup.transaction_id);
-        console.log(`✅ [CLEANUP] Deleted known duplicate transaction ${knownDup.transaction_id}`);
-      }
-
-      // Also scan all referral bonus transactions for duplicate pairs or 0 amount corrupted entries
-      const referralTxs = await TransactionModel.find({
-        $or: [
-          { transaction_type: "Referral Bonus" },
-          { description: { $regex: "Referral Bonus", $options: "i" } }
-        ]
-      }).sort({ createdAt: 1, transaction_date: 1 });
-
-      const seen = new Map();
-      for (const tx of referralTxs) {
-        const dateStr = tx.transaction_date ? String(tx.transaction_date).split("T")[0] : "";
-        const amount = Number(tx.vw_credit || tx.ew_credit || tx.net_amount || 0);
-        const buyerId = tx.related_member_id || tx.related_member_name || "";
-        const key = `${tx.member_id}_${buyerId}_${dateStr}`;
-
-        // If amount is 0 or negative, it's invalid/corrupted
-        if (amount <= 0) {
-          await TransactionModel.deleteOne({ _id: tx._id });
-          if (tx.reference_no) {
-            await PayoutModel.deleteMany({ payout_id: tx.reference_no });
-            const CommissionModel = require("../../../models/commission.model");
-            await CommissionModel.deleteMany({ transaction_id: tx.transaction_id });
-          }
-          cleanedList.push(tx.transaction_id || tx._id);
-          console.log(`✅ [CLEANUP] Deleted 0-amount referral bonus: ${tx.transaction_id}`);
-          continue;
-        }
-
-        if (seen.has(key)) {
-          // This is a duplicate! Delete it and revert wallet
-          await TransactionModel.deleteOne({ _id: tx._id });
-          if (tx.reference_no) {
-            await PayoutModel.deleteMany({ payout_id: tx.reference_no });
-            const CommissionModel = require("../../../models/commission.model");
-            await CommissionModel.deleteMany({ transaction_id: tx.transaction_id });
-          }
-
-          if (amount > 0) {
-            await MemberModel.updateOne(
-              { $or: [{ Member_id: tx.member_id }, { member_id: tx.member_id }] },
-              { $inc: { vendor_wallet: -amount, earning_wallet: -amount } }
-            );
-          }
-          cleanedList.push(tx.transaction_id);
-          console.log(`✅ [CLEANUP] Deleted duplicate referral bonus: ${tx.transaction_id}`);
-        } else {
-          seen.set(key, tx.transaction_id);
-        }
-      }
+      // Safe no-op on automatic overview calls to prevent accidental deletion of valid commissions
+      console.log("ℹ️ [CLEANUP] Routine scan skipped to preserve valid commission history.");
     }
 
     const resultData = {
@@ -630,6 +554,93 @@ async function cleanDuplicateReferralBonus(req = null, res = null) {
   }
 }
 
+async function syncAllMissingCommissions(req = null, res = null) {
+  try {
+    console.log("🔄 [SYNC] Starting sync of missing commissions for all active members...");
+
+    const activeMembers = await MemberModel.find({
+      $or: [
+        { status: "active" },
+        { status: "Active" },
+        { package_value: { $gt: 0 } },
+        { amount: { $gt: 0 } }
+      ]
+    });
+
+    console.log(`🔍 [SYNC] Found ${activeMembers.length} active members with package.`);
+    let syncedCount = 0;
+    const details = [];
+
+    for (const member of activeMembers) {
+      const memberId = member.Member_id || member.member_id;
+      const sponsorId = member.sponsor_id || member.Sponsor_code || member.introducer;
+
+      if (!sponsorId) continue;
+
+      let packageAmount = Number(member.package_value || member.amount || 0);
+      if (isNaN(packageAmount) || packageAmount <= 0) {
+        const pkgStr = String(member.spackage || "");
+        const match = pkgStr.match(/(\d+)/);
+        if (match) packageAmount = Number(match[1]);
+      }
+
+      if (packageAmount <= 0) continue;
+
+      // Check if direct referral commission was already credited for this member
+      const existingTx = await TransactionModel.findOne({
+        $or: [
+          { related_member_id: memberId },
+          { related_member_name: member.Name || member.name },
+          { description: new RegExp(`member ${memberId}`, 'i') }
+        ],
+        $or: [
+          { transaction_type: { $regex: /referral/i } },
+          { description: { $regex: /referral/i } }
+        ]
+      });
+
+      if (existingTx) {
+        continue;
+      }
+
+      console.log(`⚡ [SYNC] Calculating missing commissions for Member: ${memberId} (Pkg: ₹${packageAmount}, Sponsor: ${sponsorId})...`);
+
+      const commissions = await calculateCommissions(memberId, sponsorId, packageAmount);
+      if (commissions.length > 0) {
+        const results = await processCommissions(commissions);
+        syncedCount++;
+        details.push({
+          memberId,
+          packageAmount,
+          sponsorId,
+          commissionsCount: commissions.length,
+          results
+        });
+      }
+    }
+
+    console.log(`🎉 [SYNC] Successfully synced commissions for ${syncedCount} members!`);
+
+    const resultData = {
+      success: true,
+      message: `Successfully synced missing commissions for ${syncedCount} members.`,
+      syncedCount,
+      details
+    };
+
+    if (res && typeof res.status === "function") {
+      return res.status(200).json(resultData);
+    }
+    return resultData;
+  } catch (error) {
+    console.error("❌ [SYNC] Error syncing commissions:", error);
+    if (res && typeof res.status === "function") {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   triggerMLMCommissions,
   updateReferralHierarchy,
@@ -644,5 +655,6 @@ module.exports = {
   getROIBenefits,
   getROISummary,
   getLevelRoiSchedules,
-  cleanDuplicateReferralBonus
+  cleanDuplicateReferralBonus,
+  syncAllMissingCommissions
 };

@@ -551,7 +551,8 @@ const updateMemberStatus = async (req, res) => {
       updatePayload.roi_start_date = activationDate;
       updatePayload.roi_last_payout_date = activationDate;
       if (existingMember.package_value && existingMember.package_value > 0) {
-        updatePayload.roi_payout_target = (existingMember.package_value || 0) * 3;
+        updatePayload.roi_payout_target = 400; // 0.50%/day × 400 days = 200% (2x) of investment
+        updatePayload.roi_daily_amount = Math.round(existingMember.package_value * 0.005 * 100) / 100; // 0.50% daily
       }
     }
 

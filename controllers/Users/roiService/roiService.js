@@ -170,7 +170,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         }
                     );
 
-                    console.log(`✅ [Daily Incentive] Credited Day ${newCount}/${targetDays} to ${member.Member_id} (Level ${memberLevel}): Total ₹${actualDaily} Credits`);
+                    console.log(`✅ [Daily Incentive] Credited Day ${newCount}/${targetDays} to ${member.Member_id} (Level ${member.level || 0}): Total ₹${actualDaily} Credits`);
                 }
 
             } catch (memberErr) {

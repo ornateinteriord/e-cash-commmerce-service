@@ -137,12 +137,21 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
       return [];
     }
 
-    const packageValue = specificAmount !== null ? specificAmount : Number(newMember.package_value || newMember.spackage || 0);
+    // Determine package value flexibly
+    let packageValue = Number(specificAmount);
+    if (isNaN(packageValue) || packageValue <= 0) {
+      packageValue = Number(newMember.package_value || newMember.amount || 0);
+      if (isNaN(packageValue) || packageValue <= 0) {
+        const pkgStr = String(newMember.spackage || "");
+        const match = pkgStr.match(/(\d+)/);
+        if (match) packageValue = Number(match[1]);
+      }
+    }
+
     if (!packageValue || packageValue <= 0) {
       console.log(`⚠️ New member ${newMemberId} has invalid package amount: ${packageValue}`);
       return [];
     }
-
 
     // Find all upline sponsors up to 10 levels
     const uplineSponsors = await findUplineSponsors(newMemberId, 10);
@@ -155,55 +164,47 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
 
     // Process each upline sponsor
     for (const upline of uplineSponsors) {
-      // Only active sponsors are eligible for commissions (case-insensitive)
-      const isActive = String(upline.sponsor_status || "").toLowerCase() === "active";
-      if (!isActive) {
-        continue;
-      }
-
-      const sponsorLevel = Number(upline.sponsor_level) || 0;
-
-      // --- 1. Calculate Referral Level Income (Direct - Level 1) ---
-      // Direct income flow keeps same, no member level requirement
-      const refPercentage = referralCommissionPercentages[upline.level] || 0;
-      if (refPercentage > 0 && upline.level === 1) {
+      // --- 1. Level 1: DIRECT REFERRAL BONUS (ADD DIRECTLY, NO LEVEL CHECK) ---
+      const refPercentage = referralCommissionPercentages[1] || 10;
+      if (upline.level === 1 && refPercentage > 0) {
         const refAmount = Number(((packageValue * refPercentage) / 100).toFixed(2));
         if (refAmount > 0) {
           commissions.push({
-            level: upline.level,
+            level: 1,
             sponsor_id: upline.sponsor_id,
             Sponsor_code: upline.Sponsor_code,
             sponsor_name: upline.sponsor_name,
             sponsor_mobileno: upline.sponsor_mobileno,
             sponsored_member_id: upline.sponsored_member_id,
             new_member_id: newMemberId,
-            new_member_name: newMember.Name,
+            new_member_name: newMember.Name || newMember.name,
             amount: refAmount,
             percentage: refPercentage,
             packageValue: packageValue,
-            payout_type: `Level ${upline.level} Referral Bonus (Invest Amount)`,
-            description: `Level ${upline.level} Referral commission (${refPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
+            payout_type: `Level 1 Referral Bonus (Invest Amount)`,
+            description: `Level 1 Direct Referral commission (${refPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
-          console.log(`✅ [REFERRAL BONUS] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${refAmount} (${refPercentage}%)`);
+          console.log(`✅ [DIRECT REFERRAL BONUS] Level 1: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${refAmount} (${refPercentage}%) directly`);
         }
       }
 
-      // --- 2. Calculate Level Benefits Income (Level 2 to 10) ---
+      // --- 2. Levels 2 to 10: PRODUCT LEVEL INCOME (CHECK SPONSOR'S LEVEL) ---
+      // User Rules (Based on Member's LEVEL badge in Dashboard):
+      // * for 2-5 level commission: min Level 4 compulsory (sponsor.level >= 4)
+      // * for 6-10 level commission: min Level 8 compulsory (sponsor.level >= 8)
       const levelPercentage = levelBenefitsPercentages[upline.level] || 0;
       if (levelPercentage > 0 && upline.level > 1) {
-        const directCount = Number(upline.direct_referrals_count) || 0;
+        // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
+        const sponsorLevel = Number(upline.sponsor_level) || 0;
 
-        // Eligibility rule:
-        // - For 5 level commission (Level 2 to 5): min 4 direct compulsory
-        // - For 10 level commission (Level 6 to 10): min 8 direct compulsory
-        if (upline.level >= 2 && upline.level <= 5 && directCount < 4) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has ${directCount} direct referrals (Requires min 4 direct). Commission skipped.`);
+        if (upline.level >= 2 && upline.level <= 5 && sponsorLevel < 4) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level 4). Commission skipped.`);
           continue;
         }
 
-        if (upline.level >= 6 && upline.level <= 10 && directCount < 8) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has ${directCount} direct referrals (Requires min 8 direct). Commission skipped.`);
+        if (upline.level >= 6 && upline.level <= 10 && sponsorLevel < 8) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level 8). Commission skipped.`);
           continue;
         }
 
@@ -217,7 +218,7 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             sponsor_mobileno: upline.sponsor_mobileno,
             sponsored_member_id: upline.sponsored_member_id,
             new_member_id: newMemberId,
-            new_member_name: newMember.Name,
+            new_member_name: newMember.Name || newMember.name,
             amount: levelAmount,
             percentage: levelPercentage,
             packageValue: packageValue,
@@ -250,42 +251,55 @@ const processCommissions = async (commissions, session = null) => {
 
     for (const commission of commissions) {
       try {
-        // Verify sponsor is still active before processing
-        const sponsor = await MemberModel.findOne({ Member_id: commission.sponsor_id }).session(session);
+        // Flexible sponsor lookup (supports Member_id, member_id, mobileno, member_code)
+        const sponsor = await MemberModel.findOne({
+          $or: [
+            { Member_id: commission.sponsor_id },
+            { member_id: commission.sponsor_id },
+            { mobileno: commission.sponsor_id },
+            { member_code: commission.sponsor_id }
+          ]
+        }).session(session);
 
-        if (!sponsor || sponsor.status !== 'active') {
+        if (!sponsor) {
           results.push({
             success: false,
             level: commission.level,
             sponsor_id: commission.sponsor_id,
             sponsor_name: commission.sponsor_name,
-            error: `Sponsor status is not active (${sponsor?.status || 'not found'})`
+            error: `Sponsor not found (${commission.sponsor_id})`
           });
           continue;
         }
 
-        // Safety verification of sponsor level eligibility
-        const sponsorLevel = Number(sponsor.level) || 0;
-        if (commission.level >= 2 && commission.level <= 5 && sponsorLevel < 4) {
-          results.push({
-            success: false,
-            level: commission.level,
-            sponsor_id: commission.sponsor_id,
-            sponsor_name: commission.sponsor_name,
-            error: `Sponsor level ${sponsorLevel} is not eligible for Level ${commission.level} commission (Requires Level >= 4)`
-          });
-          continue;
-        }
+        // LEVEL 1: DIRECT COMMISSION IS ADDED DIRECTLY (NO LEVEL CHECK)
+        // LEVEL 2-5: Min Level 4 compulsory (sponsor.level >= 4)
+        // LEVEL 6-10: Min Level 8 compulsory (sponsor.level >= 8)
+        if (commission.level > 1) {
+          // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
+          const sponsorLevel = Number(sponsor.level) || 0;
 
-        if (commission.level >= 6 && commission.level <= 10 && sponsorLevel < 8) {
-          results.push({
-            success: false,
-            level: commission.level,
-            sponsor_id: commission.sponsor_id,
-            sponsor_name: commission.sponsor_name,
-            error: `Sponsor level ${sponsorLevel} is not eligible for Level ${commission.level} commission (Requires Level >= 8)`
-          });
-          continue;
+          if (commission.level >= 2 && commission.level <= 5 && sponsorLevel < 4) {
+            results.push({
+              success: false,
+              level: commission.level,
+              sponsor_id: commission.sponsor_id,
+              sponsor_name: commission.sponsor_name,
+              error: `Sponsor is at Level ${sponsorLevel}, requires min Level 4 for Level ${commission.level} commission`
+            });
+            continue;
+          }
+
+          if (commission.level >= 6 && commission.level <= 10 && sponsorLevel < 8) {
+            results.push({
+              success: false,
+              level: commission.level,
+              sponsor_id: commission.sponsor_id,
+              sponsor_name: commission.sponsor_name,
+              error: `Sponsor is at Level ${sponsorLevel}, requires min Level 8 for Level ${commission.level} commission`
+            });
+            continue;
+          }
         }
 
         // Prevent duplicate commission for the same buyer, level and amount processed within the last 10 minutes
@@ -293,14 +307,20 @@ const processCommissions = async (commissions, session = null) => {
         const existingRecentTx = await TransactionModel.findOne({
           member_id: { $in: [commission.sponsor_id, commission.Sponsor_code].filter(Boolean) },
           level: commission.level,
-          $or: [
-            { related_member_id: commission.new_member_id },
-            { related_member_name: commission.new_member_name },
-            { description: new RegExp(`member ${commission.new_member_id}`, 'i') }
-          ],
-          $or: [
-            { createdAt: { $gte: tenMinutesAgo } },
-            { transaction_date: { $gte: tenMinutesAgo.toISOString().split('T')[0] } }
+          $and: [
+            {
+              $or: [
+                { related_member_id: commission.new_member_id },
+                { related_member_name: commission.new_member_name },
+                { description: new RegExp(`member ${commission.new_member_id}`, 'i') }
+              ]
+            },
+            {
+              $or: [
+                { createdAt: { $gte: tenMinutesAgo } },
+                { transaction_date: { $gte: tenMinutesAgo.toISOString().split('T')[0] } }
+              ]
+            }
           ]
         }).session(session);
 
@@ -418,8 +438,8 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
       description: payout_type,
       transaction_type: isReferral ? "Referral Bonus" : "Product Level Income",
       vw_credit: "0",
-      ew_credit: isReferral ? commissionAmount.toString() : "0",
-      pw_credit: !isReferral ? commissionAmount.toString() : "0",
+      ew_credit: commissionAmount.toString(),
+      pw_credit: "0",
       tw_credit: "0",
       uw_credit: "0",
       fd_credit: "0",
@@ -434,18 +454,16 @@ const createLevelBenefitsTransaction = async (transactionData, session = null) =
 
     await transaction.save({ session });
 
-    // Level 1 Referral Bonus goes to Earning Wallet
-    if (isReferral) {
-      await MemberModel.findOneAndUpdate(
-        { Member_id: memberId },
-        { 
-          $inc: {
-            earning_wallet: commissionAmount
-          } 
-        },
-        { session }
-      );
-    }
+    // User Rule: Referral & Level income credited ONLY to Earning Wallet (not product wallet or first normal wallet)
+    await MemberModel.findOneAndUpdate(
+      sponsorLookup,
+      { 
+        $inc: {
+          earning_wallet: commissionAmount
+        } 
+      },
+      { session }
+    );
 
 return transaction;
 

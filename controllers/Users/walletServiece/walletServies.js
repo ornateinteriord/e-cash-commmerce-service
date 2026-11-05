@@ -1499,21 +1499,6 @@ const getEarningWalletOverview = async (req, res) => {
       const desc = (tx.description || "").toLowerCase();
       const benefit = (tx.benefit_type || "").toLowerCase();
 
-      // Product level income has its own dedicated Product Level Wallet - exclude from Earning Wallet
-      const isProductLevelIncome = (
-        desc.includes("product level") ||
-        txType.includes("product level") ||
-        desc.includes("product listing") ||
-        txType.includes("product listing") ||
-        desc.includes("level benefit") ||
-        desc.includes("level bonus") ||
-        txType.includes("level benefit") ||
-        txType.includes("level bonus") ||
-        benefit.includes("level income") ||
-        parseFloat(tx.pw_credit) > 0 ||
-        txType === "product level withdrawal"
-      );
-
       const isDepositOrLoadFund = (
         txType.includes("deposit") ||
         desc.includes("deposit") ||
@@ -1533,29 +1518,42 @@ const getEarningWalletOverview = async (req, res) => {
         desc.includes("refund")
       );
 
-      const isEarningIncome = (
-        txType.includes("referral") ||
-        desc.includes("referral") ||
-        (benefit === "direct" && !isDepositOrLoadFund) ||
-        txType.includes("repayment commission") ||
-        desc.includes("repayment commission")
-      ) && !isDepositOrLoadFund;
-
-      const isEarningWithdrawal = (
-        txType === "earning withdrawal" ||
-        (txType.includes("withdrawal") && desc.includes("earning"))
-      );
-
-      const isExcluded = (
+      const isROI = (
         txType.includes("daily incentive") ||
         desc.includes("daily incentive") ||
         txType.includes("roi") ||
         desc.includes("roi") ||
         txType.includes("level daily roi") ||
-        desc.includes("level daily roi") ||
+        desc.includes("level daily roi")
+      );
+
+      // User Rule: All referral and level commissions show in Earning Wallet ONLY (except ROI)
+      const isEarningIncome = (
+        txType.includes("referral") ||
+        desc.includes("referral") ||
+        txType.includes("product level") ||
+        desc.includes("product level") ||
+        txType.includes("level benefit") ||
+        desc.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        desc.includes("level bonus") ||
+        benefit.includes("level income") ||
+        parseFloat(tx.pw_credit) > 0 ||
+        (benefit === "direct" && !isDepositOrLoadFund) ||
+        txType.includes("repayment commission") ||
+        desc.includes("repayment commission")
+      ) && !isDepositOrLoadFund && !isROI;
+
+      const isEarningWithdrawal = (
+        txType === "earning withdrawal" ||
+        txType === "product level withdrawal" ||
+        (txType.includes("withdrawal") && (desc.includes("earning") || desc.includes("referral") || desc.includes("level")))
+      );
+
+      const isExcluded = (
+        isROI ||
         txType.includes("invest amount") ||
         txType === "vendor withdrawal" ||
-        isProductLevelIncome ||
         isDepositOrLoadFund
       );
 
@@ -1666,20 +1664,6 @@ const earningWalletWithdraw = async (req, res) => {
       const desc = (tx.description || "").toLowerCase();
       const benefit = (tx.benefit_type || "").toLowerCase();
 
-      const isProductLevelIncome = (
-        desc.includes("product level") ||
-        txType.includes("product level") ||
-        desc.includes("product listing") ||
-        txType.includes("product listing") ||
-        desc.includes("level benefit") ||
-        desc.includes("level bonus") ||
-        txType.includes("level benefit") ||
-        txType.includes("level bonus") ||
-        benefit.includes("level income") ||
-        parseFloat(tx.pw_credit) > 0 ||
-        txType === "product level withdrawal"
-      );
-
       const isDepositOrLoadFund = (
         txType.includes("deposit") ||
         desc.includes("deposit") ||
@@ -1699,28 +1683,42 @@ const earningWalletWithdraw = async (req, res) => {
         desc.includes("refund")
       );
 
-      const isEarningIncome = (
-        txType.includes("referral") ||
-        desc.includes("referral") ||
-        (benefit === "direct" && !isDepositOrLoadFund) ||
-        txType.includes("repayment commission") ||
-        desc.includes("repayment commission")
-      ) && !isDepositOrLoadFund;
-
-      const isEarningWithdrawal = (
-        txType === "earning withdrawal" ||
-        (txType.includes("withdrawal") && desc.includes("earning"))
-      );
-      const isExcluded = (
+      const isROI = (
         txType.includes("daily incentive") ||
         desc.includes("daily incentive") ||
         txType.includes("roi") ||
         desc.includes("roi") ||
         txType.includes("level daily roi") ||
-        desc.includes("level daily roi") ||
+        desc.includes("level daily roi")
+      );
+
+      // User Rule: All referral and level commissions show in Earning Wallet ONLY (except ROI)
+      const isEarningIncome = (
+        txType.includes("referral") ||
+        desc.includes("referral") ||
+        txType.includes("product level") ||
+        desc.includes("product level") ||
+        txType.includes("level benefit") ||
+        desc.includes("level benefit") ||
+        txType.includes("level bonus") ||
+        desc.includes("level bonus") ||
+        benefit.includes("level income") ||
+        parseFloat(tx.pw_credit) > 0 ||
+        (benefit === "direct" && !isDepositOrLoadFund) ||
+        txType.includes("repayment commission") ||
+        desc.includes("repayment commission")
+      ) && !isDepositOrLoadFund && !isROI;
+
+      const isEarningWithdrawal = (
+        txType === "earning withdrawal" ||
+        txType === "product level withdrawal" ||
+        (txType.includes("withdrawal") && (desc.includes("earning") || desc.includes("referral") || desc.includes("level")))
+      );
+
+      const isExcluded = (
+        isROI ||
         txType.includes("invest amount") ||
         txType === "vendor withdrawal" ||
-        isProductLevelIncome ||
         isDepositOrLoadFund
       );
 

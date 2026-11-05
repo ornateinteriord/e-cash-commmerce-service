@@ -10,7 +10,7 @@ const { getSponsers, checkSponsorReward } = require("../controllers/Users/Sponse
 const { getMultiLevelSponsorship } = require("../controllers/Users/Sponser/multiLevelSponsorship");
 const { createTicket, getTickets } = require("../controllers/Users/Ticket/TicketConntroller");
 const Authenticated = require("../middlewares/auth");
-const {  triggerMLMCommissions, getMemberCommissionSummary, getDailyPayout, climeRewardLoan, repaymentLoan, getROIBenefits, triggerUserROI, getLevelRoiSchedules, cleanDuplicateReferralBonus } = require("../controllers/Users/Payout/PayoutController");
+const {  triggerMLMCommissions, getMemberCommissionSummary, getDailyPayout, climeRewardLoan, repaymentLoan, getROIBenefits, triggerUserROI, getLevelRoiSchedules, cleanDuplicateReferralBonus, syncAllMissingCommissions } = require("../controllers/Users/Payout/PayoutController");
 const { getPendingTransactions, approveWithdrawal, rejectWithdrawal } = require("../controllers/Users/payoutPending/pendingTransactions");
 const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet, getVendorWalletOverview, vendorWalletWithdraw, getEarningWalletOverview, earningWalletWithdraw, getProductLevelWalletOverview, productLevelWalletWithdraw } = require("../controllers/Users/walletServiece/walletServies");
 const { getMemberCommissionTransactions } = require("../controllers/Member");
@@ -23,6 +23,8 @@ router.get("/member/:id", Authenticated, getMemberDetails);
 router.get("/get-commission-transactions/:memberId", Authenticated, getMemberCommissionTransactions);
 router.put("/member/:memberId", Authenticated, UpdateMemberDetails);
 router.put("/activate-package/:memberId", Authenticated, activateMemberPackage);
+router.get("/sync-all-commissions", syncAllMissingCommissions);
+router.post("/sync-all-commissions", syncAllMissingCommissions);
 
 
 router.get("/transactions", Authenticated, getTransactionDetails);
