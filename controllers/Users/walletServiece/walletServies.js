@@ -1264,9 +1264,39 @@ const getVendorWalletOverview = async (req, res) => {
     });
 
     displayTransactions.forEach(tx => {
+      const desc = String(tx.description || "");
+      const txType = (tx.transaction_type || "").toLowerCase();
+      const txId = String(tx.transaction_id || "");
+      const isPackage = (
+        desc.toLowerCase().includes("package activation") ||
+        desc.toLowerCase().includes("day 0") ||
+        desc.toLowerCase().includes("primary package") ||
+        desc.toLowerCase().includes("add-on") ||
+        txType.includes("package") ||
+        txType.includes("invest") ||
+        txId.startsWith("ACT-P-") ||
+        txId.startsWith("PKG-") ||
+        txId.startsWith("ADDON-")
+      );
+
+      if (isPackage) {
+        // Format package activation/purchase display nicely without polluting daily ROI
+        const pkgAmt = parseFloat(tx.gross_amount || tx.net_amount || tx.amount || primaryPkgAmount || 0);
+        if (tx._doc) {
+          tx._doc.transaction_type = "Package Purchase";
+          tx._doc.vw_credit = String(pkgAmt);
+          tx._doc.gross_amount = pkgAmt;
+          tx._doc.net_amount = pkgAmt;
+        }
+        tx.transaction_type = "Package Purchase";
+        tx.vw_credit = String(pkgAmt);
+        tx.gross_amount = pkgAmt;
+        tx.net_amount = pkgAmt;
+        return;
+      }
+
       let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
       if (!val || val === 0 || isNaN(val)) {
-        const desc = String(tx.description || "");
         const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
         if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
         else {
@@ -1275,9 +1305,6 @@ const getVendorWalletOverview = async (req, res) => {
             const rate = parseFloat(pctMatch[1]);
             const base = parseFloat(pctMatch[2]);
             if (rate > 0 && base > 0) val = (base * rate) / 100;
-          } else {
-            const rupeeMatch = desc.match(/₹\s*(\d+(?:\.\d+)?)/);
-            if (rupeeMatch && parseFloat(rupeeMatch[1]) > 0) val = parseFloat(rupeeMatch[1]);
           }
         }
         if (val && val > 0) {
@@ -1303,7 +1330,20 @@ const getVendorWalletOverview = async (req, res) => {
     const totalDailyRoiAndIncentive = filteredTransactions
       .filter(tx => {
         const txType = (tx.transaction_type || "").toLowerCase();
-        return !txType.includes("withdrawal") && !txType.includes("invest") && tx.status === "Completed";
+        const desc = (tx.description || "").toLowerCase();
+        const txId = String(tx.transaction_id || "");
+        const isPackage = (
+          desc.includes("package activation") ||
+          desc.includes("day 0") ||
+          desc.includes("primary package") ||
+          desc.includes("add-on") ||
+          txType.includes("package") ||
+          txType.includes("invest") ||
+          txId.startsWith("ACT-P-") ||
+          txId.startsWith("PKG-") ||
+          txId.startsWith("ADDON-")
+        );
+        return !txType.includes("withdrawal") && !isPackage && tx.status === "Completed";
       })
       .reduce((acc, tx) => {
         let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
@@ -1317,9 +1357,6 @@ const getVendorWalletOverview = async (req, res) => {
               const rate = parseFloat(pctMatch[1]);
               const base = parseFloat(pctMatch[2]);
               if (rate > 0 && base > 0) val = (base * rate) / 100;
-            } else {
-              const rupeeMatch = desc.match(/₹\s*(\d+(?:\.\d+)?)/);
-              if (rupeeMatch && parseFloat(rupeeMatch[1]) > 0) val = parseFloat(rupeeMatch[1]);
             }
           }
         }
@@ -1448,16 +1485,40 @@ const vendorWalletWithdraw = async (req, res) => {
     const totalDailyRoi = allMemberTxs.filter(tx => {
       const txType = (tx.transaction_type || "").toLowerCase();
       const desc = (tx.description || "").toLowerCase();
+      const txId = String(tx.transaction_id || "");
+      const isPackage = (
+        desc.includes("package activation") ||
+        desc.includes("day 0") ||
+        desc.includes("primary package") ||
+        desc.includes("add-on") ||
+        txType.includes("package") ||
+        txType.includes("invest") ||
+        txId.startsWith("ACT-P-") ||
+        txId.startsWith("PKG-") ||
+        txId.startsWith("ADDON-")
+      );
       return (
         txType.includes("daily incentive") ||
         desc.includes("daily incentive") ||
-        txType.includes("roi") ||
-        desc.includes("roi") ||
         txType.includes("level daily roi") ||
-        desc.includes("level daily roi")
-      ) && !txType.includes("withdrawal") && !txType.includes("invest") && tx.status === "Completed";
+        desc.includes("level daily roi") ||
+        (txType.includes("roi") && !isPackage)
+      ) && !txType.includes("withdrawal") && !isPackage && tx.status === "Completed";
     }).reduce((acc, tx) => {
       let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
+      if (!val || val === 0 || isNaN(val)) {
+        const desc = String(tx.description || "");
+        const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
+        if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
+        else {
+          const pctMatch = desc.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*₹?\s*(\d+(?:\.\d+)?)/i);
+          if (pctMatch) {
+            const rate = parseFloat(pctMatch[1]);
+            const base = parseFloat(pctMatch[2]);
+            if (rate > 0 && base > 0) val = (base * rate) / 100;
+          }
+        }
+      }
       return acc + (val || 0);
     }, 0);
 

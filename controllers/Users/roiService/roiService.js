@@ -121,6 +121,23 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     const actualDaily = Math.min(dailyTotalAmount, remainingAllowed);
                     const creditAmount = actualDaily;
                     const newCount = currentCount + 1;
+
+                    // Idempotency: Prevent duplicate primary daily incentive on the same date
+                    const existingDiTx = await TransactionModel.findOne({
+                        member_id: member.Member_id,
+                        transaction_type: "Daily Incentive",
+                        transaction_date: payoutDate,
+                        description: { $regex: /Daily Incentive/i }
+                    });
+                    if (existingDiTx) {
+                        console.log(`⚠️ [Daily Incentive] Already credited for ${member.Member_id} on ${payoutDate}. Skipping duplicate.`);
+                        await MemberModel.updateOne(
+                            { Member_id: member.Member_id },
+                            { $set: { roi_last_payout_date: payoutDate } }
+                        );
+                        continue;
+                    }
+
                     const txId = `DI_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
                     const descText = `Daily Incentive (0.50% of ₹${pkgAmount}) - Day ${newCount}/${targetDays}`;
@@ -243,6 +260,23 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                 for (const payoutDate of daysToProcess) {
                     const newCount = currentCount + 1;
+
+                    // Idempotency: Prevent duplicate add-on daily incentive on the same date
+                    const existingAddonTx = await TransactionModel.findOne({
+                        member_id: addon.member_id,
+                        transaction_type: "Daily Incentive",
+                        transaction_date: payoutDate,
+                        reference_no: new RegExp(`DI-A-${addon.package_id}`, 'i')
+                    });
+                    if (existingAddonTx) {
+                        console.log(`⚠️ [Add-On Daily Incentive] Already credited for ${addon.package_id} on ${payoutDate}. Skipping duplicate.`);
+                        await AddOnPackageModel.updateOne(
+                            { package_id: addon.package_id },
+                            { $set: { roi_last_payout_date: payoutDate } }
+                        );
+                        continue;
+                    }
+
                     const txId = `DI_A_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
                     const dailyTx = new TransactionModel({
@@ -344,6 +378,18 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     continue;
                 }
 
+                // User Rule: ONLY vendors who completed >= 3 levels (sponsor.level >= 3) can receive 100-day Level ROI
+                const sponsorRank = Number(sponsor.level) || 0;
+                if (sponsorRank < 3) {
+                    console.log(`⚠️ [Level Daily ROI Skipped] Sponsor ${schedule.sponsor_id} is Level ${sponsorRank} (Requires Level >= 3).`);
+                    continue;
+                }
+
+                if (schedule.level > 3 && sponsorRank < schedule.level) {
+                    console.log(`⚠️ [Level Daily ROI Skipped] Sponsor ${schedule.sponsor_id} is Level ${sponsorRank} (Requires Level >= ${schedule.level}).`);
+                    continue;
+                }
+
                 // Determine start date and next eligible dates (Daily starts the NEXT DAY after activation)
                 const startDateStr = schedule.start_date || todayStr;
                 const lastPayoutDateStr = schedule.last_payout_date || null;
@@ -383,6 +429,24 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     const actualDaily = Math.min(dailyAmount, remainingAllowed);
                     const newCount = currentCount + 1;
+
+                    // Idempotency: Prevent duplicate Level Daily ROI from the same member to same sponsor on the same date
+                    const existingLroiTx = await TransactionModel.findOne({
+                        member_id: schedule.sponsor_id,
+                        related_member_id: schedule.from_member_id,
+                        level: schedule.level,
+                        transaction_type: "Level Daily ROI",
+                        transaction_date: payoutDate
+                    });
+                    if (existingLroiTx) {
+                        console.log(`⚠️ [Level Daily ROI] Payout already recorded for ${schedule.sponsor_id} from ${schedule.from_member_id} on ${payoutDate}. Skipping duplicate.`);
+                        await LevelRoiScheduleModel.updateOne(
+                            { schedule_id: schedule.schedule_id },
+                            { $set: { last_payout_date: payoutDate } }
+                        );
+                        continue;
+                    }
+
                     const txId = `LROI_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
                     const descText = `Level ${schedule.level} Daily ROI (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Member ${schedule.from_member_id}`;

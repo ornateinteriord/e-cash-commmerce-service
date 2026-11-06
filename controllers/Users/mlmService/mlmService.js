@@ -848,19 +848,38 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       const isActive = String(upline.sponsor_status || "").toLowerCase() === "active";
       const sponsorRank = Number(upline.sponsor_level) || 0;
 
-      // Level 1 direct sponsor always qualifies when active; Higher levels qualify if sponsor has unlocked that level
       if (!isActive) {
         console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is inactive.`);
         continue;
       }
 
-      if (upline.level > 1 && sponsorRank < upline.level) {
-        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Rank Level ${sponsorRank} (Requires Level >= ${upline.level}).`);
+      // User Rule: ONLY vendors who completed >= 3 levels (sponsor.level >= 3) are eligible for 100-day Level ROI
+      if (sponsorRank < 3) {
+        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is Level ${sponsorRank} (Requires completed >= 3 levels).`);
+        continue;
+      }
+
+      // For levels above 3, sponsor must have unlocked that level
+      if (upline.level > 3 && sponsorRank < upline.level) {
+        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Level ${sponsorRank} (Requires Level >= ${upline.level}).`);
         continue;
       }
 
       const percentage = levelRoiPercentages[upline.level] || 0;
       if (percentage <= 0) continue;
+
+      // Prevent duplicate schedule creation for the same member, sponsor, and level
+      const existingSchedule = await LevelRoiScheduleModel.findOne({
+        from_member_id: newMemberId,
+        sponsor_id: upline.sponsor_id,
+        level: upline.level,
+        status: { $in: ["Active", "Paused", "Completed"] }
+      });
+
+      if (existingSchedule) {
+        console.log(`⏭️ [100-Day Level ROI Skipped] Schedule already exists for member ${newMemberId} -> sponsor ${upline.sponsor_id} at Level ${upline.level}.`);
+        continue;
+      }
 
       const totalAmount = Number(((packageAmount * percentage) / 100).toFixed(2));
       const dailyAmount = Number((totalAmount / 100).toFixed(2));
