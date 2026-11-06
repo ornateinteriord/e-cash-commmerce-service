@@ -6,39 +6,42 @@ const LevelRoiScheduleModel = require("../../../models/Packages/LevelRoiSchedule
 const moment = require("moment");
 
 const levelRoiPercentages = {
-  1: 10,
-  2: 3,
-  3: 2,
-  4: 1,
-  5: 1,
-  6: 1,
-  7: 1
+  1: 5,
+  2: 2,
+  3: 0.5,
+  4: 0.5,
+  5: 0.5,
+  6: 0.25,
+  7: 0.25,
+  8: 0.25,
+  9: 0.25,
+  10: 0.25
 };
 
 const referralCommissionPercentages = {
-  1: 10,
-  2: 3,
-  3: 2,
-  4: 1,
-  5: 1,
-  6: 1,
-  7: 1,
-  8: 0.5,
-  9: 0.5,
-  10: 0.5
+  1: 5,
+  2: 2,
+  3: 0.5,
+  4: 0.5,
+  5: 0.5,
+  6: 0.25,
+  7: 0.25,
+  8: 0.25,
+  9: 0.25,
+  10: 0.25
 };
 
 const levelBenefitsPercentages = {
-  1: 10,
-  2: 3,
-  3: 2,
-  4: 1,
-  5: 1,
-  6: 1,
-  7: 1,
-  8: 0.5,
-  9: 0.5,
-  10: 0.5
+  1: 5,
+  2: 2,
+  3: 0.5,
+  4: 0.5,
+  5: 0.5,
+  6: 0.25,
+  7: 0.25,
+  8: 0.25,
+  9: 0.25,
+  10: 0.25
 };
 
 /*
@@ -167,7 +170,7 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
     // Process each upline sponsor
     for (const upline of uplineSponsors) {
       // --- 1. Level 1: DIRECT REFERRAL BONUS (ADD DIRECTLY, NO LEVEL CHECK) ---
-      const refPercentage = referralCommissionPercentages[1] || 10;
+      const refPercentage = referralCommissionPercentages[1] || 5;
       if (upline.level === 1 && refPercentage > 0) {
         const refAmount = Number(((packageValue * refPercentage) / 100).toFixed(2));
         if (refAmount > 0) {
@@ -192,22 +195,22 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
       }
 
       // --- 2. Levels 2 to 10: PRODUCT LEVEL INCOME ---
-      // Condition disabled as per user request:
-      // * for 2-5 level commission: min Level 4 compulsory (sponsor.level >= 4)
-      // * for 6-10 level commission: min Level 8 compulsory (sponsor.level >= 8)
+      // User Rule (Commented out temporarily as per user request - will re-enable later):
+      // * Levels 2 to 5: Sponsor must have level >= 3
+      // * Levels 6 to 10: Sponsor must have level >= 6
       const levelPercentage = levelBenefitsPercentages[upline.level] || 0;
       if (levelPercentage > 0 && upline.level > 1) {
         // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
         const sponsorLevel = Number(upline.sponsor_level) || 0;
 
-        /* DISABLED FOR NOW AS PER USER REQUEST
-        if (upline.level >= 2 && upline.level <= 5 && sponsorLevel < 4) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level 4). Commission skipped.`);
+        /* TEMPORARILY DISABLED AS PER USER REQUEST - TO BE ENABLED LATER
+        if (upline.level >= 2 && upline.level <= 5 && sponsorLevel < 3) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level >= 3). Commission skipped.`);
           continue;
         }
 
-        if (upline.level >= 6 && upline.level <= 10 && sponsorLevel < 8) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level 8). Commission skipped.`);
+        if (upline.level >= 6 && upline.level <= 10 && sponsorLevel < 6) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level >= 6). Commission skipped.`);
           continue;
         }
         */
@@ -277,31 +280,31 @@ const processCommissions = async (commissions, session = null) => {
         }
 
         // LEVEL 1: DIRECT COMMISSION IS ADDED DIRECTLY (NO LEVEL CHECK)
-        // LEVEL 2-5: Min Level 4 compulsory (sponsor.level >= 4) [DISABLED AS PER USER REQUEST]
-        // LEVEL 6-10: Min Level 8 compulsory (sponsor.level >= 8) [DISABLED AS PER USER REQUEST]
-        /* DISABLED FOR NOW AS PER USER REQUEST
+        // LEVEL 2-5: Min Level 3 compulsory (sponsor.level >= 3) [TEMPORARILY DISABLED AS PER USER REQUEST]
+        // LEVEL 6-10: Min Level 6 compulsory (sponsor.level >= 6) [TEMPORARILY DISABLED AS PER USER REQUEST]
+        /* TEMPORARILY DISABLED AS PER USER REQUEST - TO BE ENABLED LATER
         if (commission.level > 1) {
           // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
           const sponsorLevel = Number(sponsor.level) || 0;
 
-          if (commission.level >= 2 && commission.level <= 5 && sponsorLevel < 4) {
+          if (commission.level >= 2 && commission.level <= 5 && sponsorLevel < 3) {
             results.push({
               success: false,
               level: commission.level,
               sponsor_id: commission.sponsor_id,
               sponsor_name: commission.sponsor_name,
-              error: `Sponsor is at Level ${sponsorLevel}, requires min Level 4 for Level ${commission.level} commission`
+              error: `Sponsor is at Level ${sponsorLevel}, requires min Level >= 3 for Level ${commission.level} commission`
             });
             continue;
           }
 
-          if (commission.level >= 6 && commission.level <= 10 && sponsorLevel < 8) {
+          if (commission.level >= 6 && commission.level <= 10 && sponsorLevel < 6) {
             results.push({
               success: false,
               level: commission.level,
               sponsor_id: commission.sponsor_id,
               sponsor_name: commission.sponsor_name,
-              error: `Sponsor is at Level ${sponsorLevel}, requires min Level 8 for Level ${commission.level} commission`
+              error: `Sponsor is at Level ${sponsorLevel}, requires min Level >= 6 for Level ${commission.level} commission`
             });
             continue;
           }
@@ -575,9 +578,9 @@ const getUplineTree = async (memberIdOrReq, maxLevelsOrRes = 15) => {
       const sponsorLvl = Number(u.sponsor_level) || 0;
       const directCount = Number(u.direct_referrals_count) || 0;
       let eligible = isActive;
-      // Disabled for now as per user request:
-      // if (u.level >= 2 && u.level <= 5 && directCount < 4) eligible = false;
-      // if (u.level >= 6 && u.level <= 10 && directCount < 8) eligible = false;
+      // Temporarily disabled as per user request - to be enabled later:
+      // if (u.level >= 2 && u.level <= 5 && sponsorLvl < 3) eligible = false;
+      // if (u.level >= 6 && u.level <= 10 && sponsorLvl < 6) eligible = false;
 
       return {
         level: u.level,
@@ -611,7 +614,7 @@ const getCommissionSummary = () => {
     referral_rates: referralCommissionPercentages,
     level_rates: levelBenefitsPercentages,
     level_roi_rates: levelRoiPercentages,
-    condition: "Level 1: Active status required. Level 2-5: Active status & min 4 direct compulsory. Level 6-10: Active status & min 8 direct compulsory. Level ROI (100 days): Level 1-7 for vendors completed 3X business / 3 levels."
+    condition: "Level 1: 5% Direct Referral. Level 2-5: Min Level 3 required (level >= 3). Level 6-10: Min Level 6 required (level >= 6)."
   };
 };
 
@@ -833,7 +836,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       return [];
     }
 
-    const uplineSponsors = await findUplineSponsors(newMemberId, 7);
+    const uplineSponsors = await findUplineSponsors(newMemberId, 10);
     if (!uplineSponsors || uplineSponsors.length === 0) {
       console.log(`ℹ️ No upline sponsors found for ${newMemberId}`);
       return [];
@@ -843,7 +846,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
     const todayStr = moment().utcOffset("+05:30").format("YYYY-MM-DD");
 
     for (const upline of uplineSponsors) {
-      if (upline.level > 7) continue;
+      if (upline.level > 10) continue;
 
       const isActive = String(upline.sponsor_status || "").toLowerCase() === "active";
       const sponsorRank = Number(upline.sponsor_level) || 0;
