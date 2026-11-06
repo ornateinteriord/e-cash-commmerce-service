@@ -16,19 +16,27 @@ const recoverySubject = "BMS - Password Recovery";
 const resetPasswordSubject = "BMS - OTP Verification";
 
 const generateMemberCode = async () => {
-  const members = await MemberModel.find({ member_code: { $exists: true, $ne: null } })
-    .select("member_code")
-    .lean();
+  const prefix = "56";
+  let code;
+  let exists = true;
 
-  let maxCode = 100;
-  for (const m of members) {
-    const num = parseInt(m.member_code, 10);
-    if (!isNaN(num) && num > maxCode) {
-      maxCode = num;
+  while (exists) {
+    // Generate random 4 digits (e.g. 2348, 9092, 1278) -> code like 562348, 569092, 561278
+    const randomFourDigits = Math.floor(1000 + Math.random() * 9000);
+    code = prefix + randomFourDigits;
+
+    const existing = await MemberModel.exists({
+      $or: [
+        { member_code: code },
+        { Member_id: code }
+      ]
+    });
+    if (!existing) {
+      exists = false;
     }
   }
-  const nextCode = maxCode + 1;
-  return String(nextCode).padStart(4, "0"); // "0101", "0102", "0103"...
+
+  return code;
 };
 
 const generateUniqueMemberId = async () => {
@@ -309,7 +317,8 @@ const login = async (req, res) => {
     let user = await MemberModel.findOne({
       $or: [
         { mobileno: cleanUsername },
-        { Member_id: cleanUsername }
+        { Member_id: cleanUsername },
+        { member_code: cleanUsername }
       ]
     });
     

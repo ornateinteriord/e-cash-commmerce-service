@@ -23,8 +23,8 @@ const getSponsers = async (req, res) => {
     }
 
     // Try to match against any of the possible IDs of the parent
-    // Also include the parentUser's actual ID just in case
-    const allPossibleSponsorIds = [...new Set([...possibleIds, parentUser.Member_id, parentUser.member_id])].filter(Boolean);
+    // Also include the parentUser's actual ID, member_code, and mobileno just in case
+    const allPossibleSponsorIds = [...new Set([...possibleIds, parentUser.Member_id, parentUser.member_id, parentUser.member_code, parentUser.mobileno])].filter(Boolean);
 
     const sponsoredUsers = await MemberModel.aggregate([
       { 

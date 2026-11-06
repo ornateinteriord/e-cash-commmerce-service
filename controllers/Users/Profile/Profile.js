@@ -106,19 +106,26 @@ const getMemberDetails = async (req, res) => {
     }
 
     if (!foundUser.member_code && foundUser instanceof MemberModel) {
-      const allMembersWithCode = await MemberModel.find({ member_code: { $exists: true, $ne: null } })
-        .select("member_code")
-        .lean();
+      const prefix = "56";
+      let code;
+      let exists = true;
 
-      let maxCode = 100;
-      for (const m of allMembersWithCode) {
-        const num = parseInt(m.member_code, 10);
-        if (!isNaN(num) && num > maxCode) {
-          maxCode = num;
+      while (exists) {
+        const randomFourDigits = Math.floor(1000 + Math.random() * 9000);
+        code = prefix + randomFourDigits;
+
+        const existing = await MemberModel.exists({
+          $or: [
+            { member_code: code },
+            { Member_id: code }
+          ]
+        });
+        if (!existing) {
+          exists = false;
         }
       }
-      const nextCode = maxCode + 1;
-      foundUser.member_code = String(nextCode).padStart(4, "0");
+
+      foundUser.member_code = code;
       await foundUser.save();
     }
 
@@ -133,7 +140,7 @@ const getMemberDetails = async (req, res) => {
     }
     const last6 = numericPart.padStart(6, '0').slice(-6);
     const virtual_card_number = ('4638292644' + last6).replace(/(.{4})/g, '$1 ').trim();
-    const memberCodeFormatted = foundUser.member_code || '0101';
+    const memberCodeFormatted = foundUser.member_code || '562010';
 
     // Compute investment status
     const memberIdVal = foundUser.Member_id || foundUser.member_id;
@@ -234,11 +241,9 @@ const activateMemberPackage = async (req, res) => {
 
     const actualMemberId = existingMember.Member_id || existingMember.member_id || memberId;
 
-    // Dynamically accept any Ecash / BMS / PKG / direct numeric amount or "NONE"
+    // Dynamically accept any Ecash / BMS / PKG / direct numeric amount
     let selectedPackage = null;
-    if (packageType === "NONE") {
-      selectedPackage = { name: "NONE", value: 0 };
-    } else if (packageType && (packageType.startsWith("Eshopy_") || packageType.startsWith("Ecash_") || packageType.startsWith("BMS_") || packageType.startsWith("PKG-") || packageType.startsWith("PKG_"))) {
+    if (packageType && (packageType.startsWith("Eshopy_") || packageType.startsWith("Ecash_") || packageType.startsWith("BMS_") || packageType.startsWith("PKG-") || packageType.startsWith("PKG_"))) {
       const amtStr = packageType.replace(/^(Eshopy_|Ecash_|BMS_|PKG-|PKG_)/, "");
       const amt = Number(amtStr);
       if (!isNaN(amt) && amt > 0) {
@@ -249,35 +254,16 @@ const activateMemberPackage = async (req, res) => {
       selectedPackage = { name: `PKG-${amt}`, value: amt };
     }
 
-    if (!selectedPackage) {
-      return res.status(400).json({ success: false, message: "Invalid package selection" });
+    if (!selectedPackage || selectedPackage.value <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid package must be selected to activate a member. Activation without a package is not permitted."
+      });
     }
 
     const activationDate = moment().utcOffset("+05:30").format("YYYY-MM-DD");
 
-    // ── CASE A: Activation WITHOUT Package ──
-    if (selectedPackage.name === "NONE") {
-      console.log(`👤 [Activation] Activating ${actualMemberId} WITHOUT package.`);
-
-      const updatedMember = await MemberModel.findOneAndUpdate(
-        { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
-        {
-          status: "active",
-          Date_of_joining: activationDate
-        },
-        { new: true }
-      );
-
-      return res.status(200).json({
-        success: true,
-        data: updatedMember,
-        commissions: [],
-        totalCommission: 0,
-        message: "Member activated successfully without a package."
-      });
-    }
-
-    // ── CASE B: Activation WITH Package ──
+    // ── Activation WITH Package ──
     const amount = selectedPackage.value;
     console.log(`💎 [Activation] Activating ${actualMemberId} WITH ₹${amount} package.`);
 
