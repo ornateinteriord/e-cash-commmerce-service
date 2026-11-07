@@ -338,7 +338,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
         }
 
         // ─────────────────────────────────────────────────────────────
-        // 3. PROCESS 50-DAY LEVEL ROI SCHEDULES (Levels 1-7, Rank >= 3)
+        // 3. PROCESS 100-DAY LEVEL ROI SCHEDULES (NO CONDITIONS - EVERY UPLINE EARNS)
         // ─────────────────────────────────────────────────────────────
         const levelRoiQuery = {
             status: "Active",
@@ -350,7 +350,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
         }
 
         const activeSchedules = await LevelRoiScheduleModel.find(levelRoiQuery);
-        console.log(`🔍 [Level Daily ROI] Found ${activeSchedules.length} active 50-day Level ROI schedules.`);
+        console.log(`🔍 [Level Daily ROI - No Conditions] Found ${activeSchedules.length} active Level ROI schedules.`);
 
         for (const schedule of activeSchedules) {
             try {
@@ -378,6 +378,8 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     continue;
                 }
 
+                // NO CONDITIONS (Conditions commented out for now):
+                /*
                 // User Rule: ONLY vendors who completed >= 3 levels (sponsor.level >= 3) can receive 100-day Level ROI
                 const sponsorRank = Number(sponsor.level) || 0;
                 if (sponsorRank < 3) {
@@ -389,6 +391,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     console.log(`⚠️ [Level Daily ROI Skipped] Sponsor ${schedule.sponsor_id} is Level ${sponsorRank} (Requires Level >= ${schedule.level}).`);
                     continue;
                 }
+                */
 
                 // Determine start date and next eligible dates (Daily starts the NEXT DAY after activation)
                 const startDateStr = schedule.start_date || todayStr;

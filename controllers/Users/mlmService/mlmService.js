@@ -859,6 +859,8 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         continue;
       }
 
+      // NO CONDITIONS (Conditions commented out for now):
+      /*
       // User Rule: ONLY vendors who completed >= 3 levels (sponsor.level >= 3) are eligible for 100-day Level ROI
       if (sponsorRank < 3) {
         console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is Level ${sponsorRank} (Requires completed >= 3 levels).`);
@@ -870,7 +872,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Level ${sponsorRank} (Requires Level >= ${upline.level}).`);
         continue;
       }
-
+      */
       const percentage = levelRoiPercentages[upline.level] || 0;
       if (percentage <= 0) continue;
 
@@ -917,7 +919,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       await schedule.save();
       createdSchedules.push(schedule);
 
-      console.log(`✅ [100-Day Level ROI Registered] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) will receive ₹${dailyAmount}/day for 100 days (Total ₹${totalAmount}, ${percentage}% of ₹${packageAmount})`);
+      console.log(`✅ [100-Day Level ROI Registered - No Conditions] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) will receive ₹${dailyAmount}/day for 100 days (Total ₹${totalAmount}, ${percentage}% of ₹${packageAmount})`);
     }
 
     return createdSchedules;
