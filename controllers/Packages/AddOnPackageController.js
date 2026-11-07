@@ -411,7 +411,7 @@ const buyPackageDirectly = async (req, res) => {
 
     let description = "Direct Invest Amount";
     if (member_id !== finalTargetId) {
-      description = `Invest Amount for ${finalTargetId}`;
+      description = `Invest Amount for vendor ${targetMember?.member_code || finalTargetId}`;
     }
 
     const deductionTx = new TransactionModel({

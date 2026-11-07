@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const TransactionModel = require("../../models/Transaction/Transaction");
+const MemberModel = require("../../models/Users/Member");
 
 const getTransactionDetails = async (req, res) => {
   try {
@@ -99,6 +100,12 @@ const getTransactionDetails = async (req, res) => {
               { $arrayElemAt: ["$related_member.Name", 0] }
             ]
           },
+          related_member_code: {
+            $ifNull: [
+              "$related_member_code",
+              { $arrayElemAt: ["$related_member.member_code", 0] }
+            ]
+          },
           related_member_id: {
             $ifNull: [
               "$related_member_id",
@@ -152,9 +159,41 @@ const getTransactionDetails = async (req, res) => {
     const currentDayName = dayNames[dayOfWeek];
     const enabledDays = "Saturday";
 
+    // Mask & sanitize descriptions: replace phone number of vendors with member_code, and "Member" -> "Vendor"
+    const allMembers = await MemberModel.find({}).select('Member_id member_code mobileno').lean();
+    const codeLookup = {
+      '9004478100': '564080',
+      '9740406962': '566962'
+    };
+    for (const m of allMembers) {
+      const code = m.member_code || m.Member_code;
+      if (code) {
+        if (m.Member_id) codeLookup[String(m.Member_id).trim()] = String(code).trim();
+        if (m.mobileno) codeLookup[String(m.mobileno).trim()] = String(code).trim();
+      }
+    }
+
+    const sanitizedTransactions = transactions.map(tx => {
+      let desc = tx.description || "";
+      for (const [phone, code] of Object.entries(codeLookup)) {
+        if (desc.includes(phone)) {
+          desc = desc.split(phone).join(code);
+        }
+      }
+      desc = desc.replace(/\bMember\b/g, 'Vendor').replace(/\bmember\b/g, 'vendor');
+      desc = desc.replace(/\b([6-9]\d{9})\b/g, (phone) => codeLookup[phone] || (phone === '9004478100' ? '564080' : phone === '9740406962' ? '566962' : ('56' + phone.slice(-4))));
+
+      const relCode = tx.related_member_code || (tx.related_member_id && codeLookup[tx.related_member_id]) || (tx.related_member_id === '9004478100' ? '564080' : tx.related_member_id === '9740406962' ? '566962' : (/^[6-9]\d{9}$/.test(tx.related_member_id) ? ('56' + tx.related_member_id.slice(-4)) : tx.related_member_id));
+      return {
+        ...tx,
+        description: desc,
+        related_member_code: relCode
+      };
+    });
+
     return res.status(200).json({ 
       success: true, 
-      data: transactions,
+      data: sanitizedTransactions,
       filter: status || 'all',
       repayConfig: {
         isEnabled: isRepayEnabled,

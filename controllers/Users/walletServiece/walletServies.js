@@ -8,6 +8,40 @@ const { sendMail } = require("../../../utils/EmailService");
 const admin = require("../../../utils/FirebaseService");
 const generateTransactionId = require("../../../utils/generateTransactionId");
 
+const sanitizeTxList = async (txList) => {
+  if (!Array.isArray(txList) || !txList.length) return txList;
+  const allMembers = await MemberModel.find({}).select('Member_id member_code mobileno').lean();
+  const codeLookup = {
+    '9004478100': '564080',
+    '9740406962': '566962'
+  };
+  for (const m of allMembers) {
+    const code = m.member_code || m.Member_code;
+    if (code) {
+      if (m.Member_id) codeLookup[String(m.Member_id).trim()] = String(code).trim();
+      if (m.mobileno) codeLookup[String(m.mobileno).trim()] = String(code).trim();
+    }
+  }
+
+  return txList.map(item => {
+    const tx = item._doc ? { ...item._doc } : { ...item };
+    let desc = tx.description || "";
+    for (const [phone, code] of Object.entries(codeLookup)) {
+      if (desc.includes(phone)) {
+        desc = desc.split(phone).join(code);
+      }
+    }
+    desc = desc.replace(/\bMember\b/g, 'Vendor').replace(/\bmember\b/g, 'vendor');
+    desc = desc.replace(/\b([6-9]\d{9})\b/g, (phone) => codeLookup[phone] || (phone === '9004478100' ? '564080' : phone === '9740406962' ? '566962' : ('56' + phone.slice(-4))));
+
+    const relCode = tx.related_member_code || (tx.related_member_id && codeLookup[tx.related_member_id]) || (tx.related_member_id === '9004478100' ? '564080' : tx.related_member_id === '9740406962' ? '566962' : (/^[6-9]\d{9}$/.test(tx.related_member_id) ? ('56' + tx.related_member_id.slice(-4)) : tx.related_member_id));
+
+    tx.description = desc;
+    tx.related_member_code = relCode;
+    return tx;
+  });
+};
+
 /**
  * Calculate member's 2X cumulative withdrawal limits
  * Rule:
@@ -417,7 +451,7 @@ const getWalletOverview = async (req, res) => {
           outstandingLoan: Math.max(0, netLoanBalance).toFixed(2),
           loanTransactionsCount: loanTransactions.length
         },
-        transactions: nonLoanTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
+        transactions: await sanitizeTxList(nonLoanTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date))),
         calculation: {
           formula: "Available Balance = Sum of All Credits - Sum of All Debits (excluding loan and top-up transactions)",
           breakdown: `₹${completedAndPendingTx.reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0), 0).toFixed(2)} - ₹${completedAndPendingTx.reduce((acc, tx) => acc + (parseFloat(tx.ew_debit) || 0), 0).toFixed(2)} = ₹${Math.max(0, availableBalance).toFixed(2)}`,
@@ -1084,7 +1118,7 @@ const transferP2PWallet = async (req, res) => {
       transaction_id: debitTxId,
       transaction_date: new Date(),
       member_id: memberId,
-      description: `P2P Transfer sent to ${receiverMember.Name} (${receiverMember.Member_id})`,
+      description: `P2P Transfer sent to ${receiverMember.Name} (${receiverMember.member_code || receiverMember.Member_id})`,
       transaction_type: "P2P Transfer",
       ew_credit: 0,
       ew_debit: transferAmount,
@@ -1100,7 +1134,7 @@ const transferP2PWallet = async (req, res) => {
       transaction_id: creditTxId,
       transaction_date: new Date(),
       member_id: receiverMember.Member_id,
-      description: `P2P Transfer received from ${member.Name} (${member.Member_id})`,
+      description: `P2P Transfer received from ${member.Name} (${member.member_code || member.Member_id})`,
       transaction_type: "P2P Transfer",
       ew_credit: transferAmount,
       ew_debit: 0,
@@ -1402,7 +1436,7 @@ const getVendorWalletOverview = async (req, res) => {
         totalWithdrawal: completedWithdrawals.toFixed(2),
         pendingWithdrawals: pendingWithdrawals.toFixed(2),
         transactionsCount: displayTransactions.length,
-        transactions: displayTransactions
+        transactions: await sanitizeTxList(displayTransactions)
       }
     });
   } catch (error) {
@@ -1766,7 +1800,7 @@ const getEarningWalletOverview = async (req, res) => {
         totalWithdrawal: completedWithdrawals.toFixed(2),
         pendingWithdrawals: pendingWithdrawals.toFixed(2),
         transactionsCount: transactions.length,
-        transactions: transactions
+        transactions: await sanitizeTxList(transactions)
       }
     });
   } catch (error) {

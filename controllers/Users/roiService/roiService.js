@@ -449,7 +449,9 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     const txId = `LROI_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-                    const descText = `Level ${schedule.level} Daily ROI (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Member ${schedule.from_member_id}`;
+                    const sourceVendor = await MemberModel.findOne({ Member_id: schedule.from_member_id }).select('member_code').lean();
+                    const sourceCode = schedule.from_member_code || sourceVendor?.member_code || schedule.from_member_id;
+                    const descText = `Level ${schedule.level} Daily ROI (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Vendor ${sourceCode}`;
 
                     // 1. Create Transaction (vw_credit sale value / vendor wallet balance)
                     const levelRoiTx = new TransactionModel({

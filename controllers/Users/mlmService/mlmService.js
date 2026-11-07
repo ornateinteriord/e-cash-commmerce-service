@@ -167,6 +167,8 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
 
     const commissions = [];
 
+    const sourceVendorCode = newMember.member_code || newMemberId;
+
     // Process each upline sponsor
     for (const upline of uplineSponsors) {
       // --- 1. Level 1: DIRECT REFERRAL BONUS (ADD DIRECTLY, NO LEVEL CHECK) ---
@@ -187,7 +189,7 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             percentage: refPercentage,
             packageValue: packageValue,
             payout_type: `Level 1 Referral Bonus (Invest Amount)`,
-            description: `Level 1 Direct Referral commission (${refPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
+            description: `Level 1 Direct Referral commission (${refPercentage}%) from vendor ${sourceVendorCode}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
           console.log(`✅ [DIRECT REFERRAL BONUS] Level 1: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${refAmount} (${refPercentage}%) directly`);
@@ -230,7 +232,7 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             percentage: levelPercentage,
             packageValue: packageValue,
             payout_type: `Level ${upline.level} Income`,
-            description: `Level ${upline.level} Income (${levelPercentage}%) from member ${newMemberId}'s investment (₹${packageValue})`,
+            description: `Level ${upline.level} Income (${levelPercentage}%) from vendor ${sourceVendorCode}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
           console.log(`✅ [LEVEL BONUS] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${levelAmount} (${levelPercentage}%)`);
@@ -659,7 +661,7 @@ const processMemberActivation = async (activatedMemberId) => {
       sponsored_member_id: member.Member_id,
       sponsor_id: sponsor.Member_id,
       status: "Completed",
-      description: `Direct referral commission from ${member.Member_id}`
+      description: `Direct referral commission from vendor ${member.member_code || member.Member_id}`
     });
 
     await payout.save();
@@ -747,7 +749,8 @@ const distributeROICommission = async (memberId, roiAmount, session = null, cust
         status: "Completed",
         Name: upline.sponsor_name,
         mobileno: upline.sponsor_mobileno,
-        description: `ROI Level ${upline.level} benefit (${percentage}%) from member ${memberId}'s ROI (₹${roiAmount})`,
+        const sourceVendorCode = sourceMember?.member_code || memberId;
+        description: `ROI Level ${upline.level} benefit (${percentage}%) from vendor ${sourceVendorCode}'s ROI (₹${roiAmount})`,
         sponsor_status: upline.sponsor_status
       });
 
@@ -898,6 +901,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         sponsor_level: sponsorRank,
         level: upline.level,
         from_member_id: newMemberId,
+        from_member_code: newMember.member_code || newMemberId,
         from_member_name: newMember.Name || newMember.name,
         package_amount: Number(packageAmount),
         total_percentage: percentage,

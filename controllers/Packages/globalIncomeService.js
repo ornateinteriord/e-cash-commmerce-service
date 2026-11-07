@@ -100,7 +100,9 @@ const distributeGlobalIncome = async (memberId, packageAmount) => {
           transaction_id: txId,
           transaction_date: new Date(),
           member_id: beneficiaryId,
-          description: `Global Income (₹${beneficiaryEntry.package_amount}) from ${memberId}'s investment`,
+          const sourceVendor = await MemberModel.findOne({ Member_id: memberId }).select('member_code').lean();
+        const sourceVendorCode = sourceVendor?.member_code || memberId;
+        description: `Global Income (₹${beneficiaryEntry.package_amount}) from vendor ${sourceVendorCode}'s investment`,
           transaction_type: "Global Income",
           vw_credit: mainWalletAmount.toString(),
           ew_credit: "0",
