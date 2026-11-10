@@ -889,8 +889,14 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         continue;
       }
 
-      const totalAmount = Number(((packageAmount * percentage) / 100).toFixed(2));
-      const dailyAmount = Number((totalAmount / 100).toFixed(2));
+      // Downline member's daily incentive (Daily ROI): e.g. ₹500/day for ₹100,000 package
+      const downlineDailyRoi = Number(newMember.roi_daily_amount) > 0
+        ? Number(newMember.roi_daily_amount)
+        : Number((packageAmount * 0.005).toFixed(2));
+
+      // Level ROI daily amount = Percentage of Downline's Daily ROI (for 100 days)
+      const dailyAmount = Number(((downlineDailyRoi * percentage) / 100).toFixed(2));
+      const totalAmount = Number((dailyAmount * 100).toFixed(2));
 
       if (dailyAmount <= 0) continue;
 
@@ -906,6 +912,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         from_member_code: newMember.member_code || newMemberId,
         from_member_name: newMember.Name || newMember.name,
         package_amount: Number(packageAmount),
+        downline_daily_roi: downlineDailyRoi,
         total_percentage: percentage,
         total_amount: totalAmount,
         daily_amount: dailyAmount,
@@ -919,7 +926,7 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       await schedule.save();
       createdSchedules.push(schedule);
 
-      console.log(`✅ [100-Day Level ROI Registered - No Conditions] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) will receive ₹${dailyAmount}/day for 100 days (Total ₹${totalAmount}, ${percentage}% of ₹${packageAmount})`);
+      console.log(`✅ [100-Day Level ROI Registered] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) will receive ₹${dailyAmount}/day for 100 days (Total ₹${totalAmount}, ${percentage}% of downline daily ROI ₹${downlineDailyRoi})`);
     }
 
     return createdSchedules;
