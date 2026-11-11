@@ -29,6 +29,15 @@ const requestAddOn = async (req, res) => {
       return res.status(404).json({ success: false, message: "Member not found" });
     }
 
+    // Re-top up Rule: Allow same package or higher package. Do NOT allow below current package.
+    const memberCurrentPkg = Number(member.package_value) || 0;
+    if (memberCurrentPkg > 0 && Number(requested_amount) < memberCurrentPkg) {
+      return res.status(400).json({
+        success: false,
+        message: `Re-top up amount (₹${requested_amount}) cannot be lower than your current package (₹${memberCurrentPkg}). Please select the same or a higher package.`
+      });
+    }
+
     // Re-investment 2X restriction removed - vendors can load funds freely anytime
 
     const method = payment_method || "crypto";
@@ -376,14 +385,13 @@ const buyPackageDirectly = async (req, res) => {
       return res.status(404).json({ success: false, message: "Target member not found" });
     }
 
-    // 0. Check if invest amount already active
-    if (Number(targetMember.package_value) === Number(requested_amount)) {
-      return res.status(400).json({ success: false, message: "You have already invested this amount." });
-    }
-
-    const existingAddOn = await AddOnPackageModel.findOne({ member_id: finalTargetId, amount: Number(requested_amount) });
-    if (existingAddOn) {
-      return res.status(400).json({ success: false, message: "You have already invested this amount." });
+    // 0. Re-top up Rule: Allow same package or higher package. Do NOT allow below current package.
+    const currentPkg = Number(targetMember.package_value) || 0;
+    if (currentPkg > 0 && Number(requested_amount) < currentPkg) {
+      return res.status(400).json({
+        success: false,
+        message: `Re-top up amount (₹${requested_amount}) cannot be lower than your current package (₹${currentPkg}). Please select the same or a higher package.`
+      });
     }
 
     // Re-investment 2X restriction removed - vendors can load funds freely anytime

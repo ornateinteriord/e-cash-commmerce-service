@@ -454,7 +454,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
 
                     const sourceVendor = await MemberModel.findOne({ Member_id: schedule.from_member_id }).select('member_code').lean();
                     const sourceCode = schedule.from_member_code || sourceVendor?.member_code || schedule.from_member_id;
-                    const descText = `Level ${schedule.level} Daily ROI (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Vendor ${sourceCode}`;
+                    const descText = `Level ${schedule.level} Vendor Level Benefits (₹${actualDaily}/day) - Day ${newCount}/${targetDays} from Vendor ${sourceCode}`;
 
                     // 1. Create Transaction (vw_credit sale value / vendor wallet balance)
                     const levelRoiTx = new TransactionModel({
@@ -465,7 +465,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         mobileno: sponsor.mobileno || sponsor.contactno,
                         description: descText,
                         transaction_type: "Level Daily ROI",
-                        benefit_type: "Level ROI",
+                        benefit_type: "Vendor Level Benefits",
                         level: schedule.level,
                         related_member_id: schedule.from_member_id,
                         vw_credit: String(actualDaily),
@@ -482,7 +482,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         payout_id: Date.now() + Math.floor(Math.random() * 1000),
                         date: moment(payoutDate, "YYYY-MM-DD").toDate(),
                         memberId: schedule.sponsor_id,
-                        payout_type: `Level ${schedule.level} Daily ROI (100 Days)`,
+                        payout_type: `Level ${schedule.level} Vendor Level Benefits (100 Days)`,
                         ref_no: schedule.schedule_id,
                         amount: actualDaily,
                         count: newCount,

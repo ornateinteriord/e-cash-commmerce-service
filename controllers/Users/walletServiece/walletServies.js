@@ -34,6 +34,20 @@ const sanitizeTxList = async (txList) => {
     desc = desc.replace(/\bMember\b/g, 'Vendor').replace(/\bmember\b/g, 'vendor');
     desc = desc.replace(/\b([6-9]\d{9})\b/g, (phone) => codeLookup[phone] || (phone === '9004478100' ? '564080' : phone === '9740406962' ? '566962' : ('56' + phone.slice(-4))));
 
+    // Rename earnings terms directly from server:
+    // 1. Referral Bonus / Commission -> Referral Benefits
+    desc = desc.replace(/\bLevel\s*(\d+)?\s*Referral\s*(?:Bonus|Commission|Income)\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Referral Benefits` : 'Referral Benefits');
+    desc = desc.replace(/\b(?:Direct\s*)?Referral\s*(?:Bonus|Commission|Income)\b/gi, 'Referral Benefits');
+
+    // 2. Level Daily ROI / Level ROI -> Vendor Level Benefits
+    desc = desc.replace(/\bLevel\s*(\d+)?\s*(?:Daily\s*)?ROI\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Vendor Level Benefits` : 'Vendor Level Benefits');
+    desc = desc.replace(/\bLevel\s*Daily\s*ROI\b/gi, 'Vendor Level Benefits');
+
+    // 3. Level Income / Level Bonus -> Vendor Benefits
+    desc = desc.replace(/\bLevel\s*(\d+)?\s*(?:Income|Bonus)\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Vendor Benefits` : 'Vendor Benefits');
+    desc = desc.replace(/\bLevel\s*(?:Income|Bonus)\b/gi, 'Vendor Benefits');
+      desc = desc.replace(/Vendor\s+Vendor\s+Benefits/gi, 'Vendor Level Benefits').replace(/\bVendor\s+Vendor\b/gi, 'Vendor');
+
     const relCode = tx.related_member_code || (tx.related_member_id && codeLookup[tx.related_member_id]) || (tx.related_member_id === '9004478100' ? '564080' : tx.related_member_id === '9740406962' ? '566962' : (/^[6-9]\d{9}$/.test(tx.related_member_id) ? ('56' + tx.related_member_id.slice(-4)) : tx.related_member_id));
 
     tx.description = desc;
@@ -1781,6 +1795,76 @@ const getEarningWalletOverview = async (req, res) => {
     const totalWithdrawn = completedWithdrawals + pendingWithdrawals;
     const remainingWithdrawalLimit = Math.max(0, maxWithdrawalLimit - totalWithdrawn);
 
+    // Sale Value (Vendor Wallet) 2X metrics
+    const saleValueRoiIncome = allTxs
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        const desc = (tx.description || "").toLowerCase();
+        const txId = String(tx.transaction_id || "");
+        const isPackage = (
+          desc.includes("package activation") ||
+          desc.includes("day 0") ||
+          desc.includes("primary package") ||
+          desc.includes("add-on") ||
+          txType.includes("package") ||
+          txType.includes("invest") ||
+          txId.startsWith("ACT-P-") ||
+          txId.startsWith("PKG-") ||
+          txId.startsWith("ADDON-")
+        );
+        const isROI = (
+          txType.includes("daily incentive") ||
+          desc.includes("daily incentive") ||
+          txType.includes("roi") ||
+          desc.includes("roi") ||
+          txType.includes("level daily roi") ||
+          desc.includes("level daily roi") ||
+          txType.includes("vendor level benefit") ||
+          desc.includes("vendor level benefit")
+        );
+        return isROI && !isPackage && !txType.includes("withdrawal") && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => {
+        let val = parseFloat(tx.vw_credit || tx.net_amount || tx.ew_credit || tx.gross_amount || tx.amount || 0);
+        if (!val || val === 0 || isNaN(val)) {
+          const desc = String(tx.description || "");
+          const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
+          if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
+        }
+        return acc + (val || 0);
+      }, 0);
+
+    const saleValueWithdrawn = allTxs
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        const desc = (tx.description || "").toLowerCase();
+        const isVwWithdrawal = (
+          txType === "vendor withdrawal" ||
+          (txType.includes("withdrawal") && desc.includes("vendor")) ||
+          parseFloat(tx.vw_debit) > 0
+        );
+        return isVwWithdrawal && ["Completed", "Pending", "Processing", "Approved"].includes(tx.status);
+      })
+      .reduce((acc, tx) => acc + (parseFloat(tx.vw_debit) || parseFloat(tx.gross_amount) || 0), 0);
+
+    const saleValueLimit = totalPackagePurchased * 2; // 2x Sale Value limit
+    const earningLimit = maxWithdrawalLimit; // 1x Earning Wallet limit
+    const threeXLimit = totalPackagePurchased * 3; // Combined 3x limit (2x Sale Value + 1x Earning Wallet)
+
+    const combinedTotalEarnings = saleValueRoiIncome + totalIncome;
+    const combinedTotalWithdrawn = saleValueWithdrawn + totalWithdrawn;
+
+    // User Rule: Combine Sale Value 2X amount and Earning Wallet 1X amount.
+    // When combined reaches 3X of package amount, show the Re-Topup button in Earning Wallet!
+    const canReTopup = Boolean(
+      totalPackagePurchased > 0 && (
+        combinedTotalEarnings >= threeXLimit ||
+        combinedTotalWithdrawn >= threeXLimit ||
+        (saleValueWithdrawn >= saleValueLimit && totalWithdrawn >= earningLimit) ||
+        (totalIncome >= earningLimit && saleValueRoiIncome >= saleValueLimit)
+      )
+    );
+
     await MemberModel.updateOne(
       { $or: [{ Member_id: actualMemberId }, { member_id: actualMemberId }] },
       { $set: { earning_wallet: earningBalance } }
@@ -1796,6 +1880,17 @@ const getEarningWalletOverview = async (req, res) => {
         maxWithdrawalLimit: maxWithdrawalLimit.toFixed(2),
         totalWithdrawn: totalWithdrawn.toFixed(2),
         remainingWithdrawalLimit: remainingWithdrawalLimit.toFixed(2),
+        saleValueLimit: saleValueLimit.toFixed(2),
+        saleValueRoiIncome: saleValueRoiIncome.toFixed(2),
+        saleValueWithdrawn: saleValueWithdrawn.toFixed(2),
+        earningLimit: earningLimit.toFixed(2),
+        earningIncome: totalIncome.toFixed(2),
+        earningWithdrawn: totalWithdrawn.toFixed(2),
+        combinedTotalEarnings: combinedTotalEarnings.toFixed(2),
+        combinedTotalWithdrawn: combinedTotalWithdrawn.toFixed(2),
+        threeXLimit: threeXLimit.toFixed(2),
+        canReTopup: canReTopup,
+        requiredEarningsForReTopup: threeXLimit.toFixed(2),
         totalIncome: totalIncome.toFixed(2),
         totalWithdrawal: completedWithdrawals.toFixed(2),
         pendingWithdrawals: pendingWithdrawals.toFixed(2),

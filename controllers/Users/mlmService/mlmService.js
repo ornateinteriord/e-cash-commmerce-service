@@ -188,11 +188,11 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             amount: refAmount,
             percentage: refPercentage,
             packageValue: packageValue,
-            payout_type: `Level 1 Referral Bonus (Invest Amount)`,
-            description: `Level 1 Direct Referral commission (${refPercentage}%) from vendor ${sourceVendorCode}'s investment (₹${packageValue})`,
+            payout_type: `Level 1 Referral Benefits (Invest Amount)`,
+            description: `Level 1 Direct Referral Benefits (${refPercentage}%) from vendor ${sourceVendorCode}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
-          console.log(`✅ [DIRECT REFERRAL BONUS] Level 1: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${refAmount} (${refPercentage}%) directly`);
+          console.log(`✅ [DIRECT REFERRAL BENEFITS] Level 1: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${refAmount} (${refPercentage}%) directly`);
         }
       }
 
@@ -231,8 +231,8 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
             amount: levelAmount,
             percentage: levelPercentage,
             packageValue: packageValue,
-            payout_type: `Level ${upline.level} Income`,
-            description: `Level ${upline.level} Income (${levelPercentage}%) from vendor ${sourceVendorCode}'s investment (₹${packageValue})`,
+            payout_type: `Level ${upline.level} Vendor Benefits`,
+            description: `Level ${upline.level} Vendor Benefits (${levelPercentage}%) from vendor ${sourceVendorCode}'s investment (₹${packageValue})`,
             sponsor_status: upline.sponsor_status
           });
           console.log(`✅ [LEVEL BONUS] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) gets ₹${levelAmount} (${levelPercentage}%)`);
