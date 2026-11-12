@@ -39,14 +39,17 @@ const sanitizeTxList = async (txList) => {
     desc = desc.replace(/\bLevel\s*(\d+)?\s*Referral\s*(?:Bonus|Commission|Income)\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Referral Benefits` : 'Referral Benefits');
     desc = desc.replace(/\b(?:Direct\s*)?Referral\s*(?:Bonus|Commission|Income)\b/gi, 'Referral Benefits');
 
-    // 2. Level Daily ROI / Level ROI -> Vendor Level Benefits
-    desc = desc.replace(/\bLevel\s*(\d+)?\s*(?:Daily\s*)?ROI\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Vendor Level Benefits` : 'Vendor Level Benefits');
-    desc = desc.replace(/\bLevel\s*Daily\s*ROI\b/gi, 'Vendor Level Benefits');
+    // 2. Level Daily ROI / Level ROI -> Vendor Benefits
+    desc = desc.replace(/\bLevel\s*(\d+)?\s*(?:Vendor\s*)?(?:Daily\s*)?ROI\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Vendor Benefits` : 'Vendor Benefits');
+    desc = desc.replace(/\bLevel\s*Daily\s*ROI\b/gi, 'Vendor Benefits');
 
     // 3. Level Income / Level Bonus -> Vendor Benefits
-    desc = desc.replace(/\bLevel\s*(\d+)?\s*(?:Income|Bonus)\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Vendor Benefits` : 'Vendor Benefits');
-    desc = desc.replace(/\bLevel\s*(?:Income|Bonus)\b/gi, 'Vendor Benefits');
-      desc = desc.replace(/Vendor\s+Vendor\s+Benefits/gi, 'Vendor Level Benefits').replace(/\bVendor\s+Vendor\b/gi, 'Vendor');
+    desc = desc.replace(/\bLevel\s*(\d+)?\s*(?:Level\s*)?(?:Income|Bonus|Benefits?)\b/gi, (_m, lvl) => lvl ? `Level ${lvl} Vendor Benefits` : 'Vendor Benefits');
+    desc = desc.replace(/\bLevel\s*(?:Income|Bonus|Benefits?)\b/gi, 'Vendor Benefits');
+    desc = desc.replace(/Vendor\s+Level\s+Benefits/gi, 'Vendor Benefits');
+    desc = desc.replace(/Vendor\s+Vendor\s+Benefits/gi, 'Vendor Benefits');
+    desc = desc.replace(/\bVendor(\s+Vendor)+\b/gi, 'Vendor');
+    desc = desc.replace(/\bVendor\s+Vendor\b/gi, 'Vendor');
 
     const relCode = tx.related_member_code || (tx.related_member_id && codeLookup[tx.related_member_id]) || (tx.related_member_id === '9004478100' ? '564080' : tx.related_member_id === '9740406962' ? '566962' : (/^[6-9]\d{9}$/.test(tx.related_member_id) ? ('56' + tx.related_member_id.slice(-4)) : tx.related_member_id));
 
@@ -218,6 +221,16 @@ const getWalletOverview = async (req, res) => {
         const isExcluded = (
           desc.includes("roi") ||
           txType.includes("roi") ||
+          benefit.includes("roi") ||
+          benefit === "level roi" ||
+          benefit === "vendor level benefits" ||
+          desc.includes("/day") ||
+          desc.includes("/100") ||
+          desc.includes("/50") ||
+          desc.includes("day ") ||
+          txType === "level daily roi" ||
+          txType === "vendor level benefits" ||
+          desc.includes("vendor level benefit") ||
           desc.includes("referral") ||
           txType.includes("referral") ||
           desc.includes("daily incentive") ||
@@ -297,11 +310,37 @@ const getWalletOverview = async (req, res) => {
     const combinedProductLevelBalance = Math.max(0, (productLevelIncome + totalMarginCommissionForOverview) - productLevelWithdrawals);
 
     const roiLevelBenefits = nonLoanTransactions
-      .filter(tx =>
-        (tx.transaction_type === "ROI Level Benefit" || tx.transaction_type === "Level Daily ROI") &&
-        tx.status === "Completed"
-      )
-      .reduce((acc, tx) => acc + (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0), 0);
+      .filter(tx => {
+        const txType = (tx.transaction_type || "").toLowerCase();
+        const desc = (tx.description || "").toLowerCase();
+        const benefit = (tx.benefit_type || "").toLowerCase();
+        const isLroi = (
+          txType === "level daily roi" ||
+          txType === "roi level benefit" ||
+          txType === "vendor level benefits" ||
+          txType.includes("vendor level benefit") ||
+          desc.includes("level daily roi") ||
+          desc.includes("vendor level benefit") ||
+          desc.includes("/day") ||
+          benefit === "level roi" ||
+          benefit === "vendor level benefits"
+        ) && (
+          desc.includes("/day") ||
+          desc.includes("/100") ||
+          desc.includes("/50") ||
+          desc.includes("day ") ||
+          desc.includes("roi") ||
+          txType.includes("roi") ||
+          benefit.includes("roi") ||
+          txType === "vendor level benefits" ||
+          benefit === "vendor level benefits"
+        );
+        return isLroi && tx.status === "Completed";
+      })
+      .reduce((acc, tx) => {
+        const amt = (parseFloat(tx.vw_credit) || 0) + (parseFloat(tx.ew_credit) || 0) + (parseFloat(tx.uw_credit) || 0) + (parseFloat(tx.fd_credit) || 0) + (parseFloat(tx.pw_credit) || 0) || (parseFloat(tx.gross_amount) || 0) || (parseFloat(tx.net_amount) || 0) || (parseFloat(tx.amount) || 0);
+        return acc + amt;
+      }, 0);
 
     const directBenefits = nonLoanTransactions
       .filter(tx => {
