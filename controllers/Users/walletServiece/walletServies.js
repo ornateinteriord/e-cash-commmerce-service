@@ -207,15 +207,18 @@ const getWalletOverview = async (req, res) => {
         const benefit = (tx.benefit_type || "").toLowerCase();
 
         const isLevel = (
+          txType === "vendor benefits" ||
           txType.includes("level income") ||
           desc.includes("level income") ||
-          desc.includes("product level") ||
           txType.includes("product level") ||
+          desc.includes("product level") ||
           desc.includes("level benefit") ||
           desc.includes("level bonus") ||
           txType.includes("level benefit") ||
           txType.includes("level bonus") ||
-          benefit.includes("level income")
+          benefit.includes("level income") ||
+          benefit === "indirect" ||
+          (/level\s*\d+/i.test(desc) && desc.includes("vendor benefit"))
         );
 
         const isExcluded = (
