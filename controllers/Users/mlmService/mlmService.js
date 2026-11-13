@@ -65,7 +65,7 @@ const getOrdinal = (number) => {
   return number + (suffixes[(value - 20) % 10] || suffixes[value] || suffixes[0]);
 };
 
-const findUplineSponsors = async (memberId, maxLevels = 15) => {
+const findUplineSponsors = async (memberId, maxLevels = 20) => {
   const uplineSponsors = [];
   const visited = new Set([String(memberId)]);
   let currentMemberId = memberId;
@@ -73,7 +73,12 @@ const findUplineSponsors = async (memberId, maxLevels = 15) => {
 
   while (level < maxLevels) {
     const currentMember = await MemberModel.findOne({
-      $or: [{ Member_id: currentMemberId }, { member_id: currentMemberId }]
+      $or: [
+        { Member_id: currentMemberId },
+        { member_id: currentMemberId },
+        { member_code: currentMemberId },
+        { mobileno: currentMemberId }
+      ]
     });
 
     const sponsorIdentifier = currentMember?.sponsor_id || currentMember?.Sponsor_code || currentMember?.introducer;
@@ -541,6 +546,44 @@ const updateSponsorReferrals = async (sponsorId, newMemberId) => {
 
     console.log(`✅ Updated referrals for ${actualSponsorId}: Added ${newMemberId}, new level: ${newLevel} (total direct referrals: ${totalDirects})`);
 
+    // --- Distribute 1 Token to up to 20 upline sponsors ---
+    try {
+      let uplineSponsors = [];
+      if (newMemberId) {
+        uplineSponsors = await findUplineSponsors(newMemberId, 20);
+      }
+
+      if (uplineSponsors && uplineSponsors.length > 0) {
+        for (const upline of uplineSponsors) {
+          if (upline.sponsor_id) {
+            await MemberModel.updateOne(
+              {
+                $or: [
+                  { Member_id: upline.sponsor_id },
+                  { member_id: upline.sponsor_id },
+                  { member_code: upline.sponsor_id },
+                  { mobileno: upline.sponsor_id }
+                ]
+              },
+              {
+                $inc: { token: 1, tokens: 1 }
+              }
+            );
+            console.log(`🪙 Awarded 1 token to Level ${upline.level} upline vendor (${upline.sponsor_id})`);
+          }
+        }
+      } else if (actualSponsorId) {
+        // Fallback: If uplines list is empty, ensure direct sponsor at least gets 1 token
+        await MemberModel.updateOne(
+          { _id: sponsor._id },
+          { $inc: { token: 1, tokens: 1 } }
+        );
+        console.log(`🪙 Awarded 1 token to direct sponsor ${actualSponsorId}`);
+      }
+    } catch (tokenErr) {
+      console.error("❌ Error distributing upline referral tokens:", tokenErr);
+    }
+
   } catch (error) {
     console.error("❌ Error updating referrals:", error);
     throw error;
@@ -936,6 +979,61 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
   }
 };
 
+const syncReferralTokens = async (req, res) => {
+  try {
+    const allMembers = await MemberModel.find({}).lean();
+    const tokenCounts = {};
+
+    for (const m of allMembers) {
+      const memId = m.Member_id || m.member_id;
+      if (!memId) continue;
+      const uplines = await findUplineSponsors(memId, 20);
+      for (const u of uplines) {
+        const upId = u.sponsor_id;
+        if (upId) {
+          tokenCounts[upId] = (tokenCounts[upId] || 0) + 1;
+        }
+      }
+    }
+
+    const bulkOps = Object.entries(tokenCounts).map(([sponsorId, count]) => ({
+      updateMany: {
+        filter: {
+          $or: [
+            { Member_id: sponsorId },
+            { member_id: sponsorId },
+            { member_code: sponsorId },
+            { mobileno: sponsorId }
+          ]
+        },
+        update: { $inc: { token: count, tokens: count } }
+      }
+    }));
+
+    if (bulkOps.length > 0) {
+      await MemberModel.bulkWrite(bulkOps);
+    }
+
+    const result = {
+      success: true,
+      message: `Successfully recalculated referral tokens for ${Object.keys(tokenCounts).length} vendors (up to 20 uplines)`,
+      syncedVendorsCount: Object.keys(tokenCounts).length,
+      sampleTokens: Object.entries(tokenCounts).slice(0, 10)
+    };
+
+    if (res && typeof res.json === 'function') {
+      return res.status(200).json(result);
+    }
+    return result;
+  } catch (error) {
+    console.error("❌ Error syncing referral tokens:", error);
+    if (res && typeof res.status === 'function') {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+    throw error;
+  }
+};
+
 module.exports = {
   referralCommissionPercentages,
   levelBenefitsPercentages,
@@ -946,6 +1044,7 @@ module.exports = {
   findUplineSponsors,
   createLevelBenefitsTransaction,
   updateSponsorReferrals,
+  syncReferralTokens,
   calculateCommissions,
   processCommissions,
   getUplineTree,

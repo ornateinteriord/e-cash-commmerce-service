@@ -507,7 +507,55 @@ const getWalletOverview = async (req, res) => {
           outstandingLoan: Math.max(0, netLoanBalance).toFixed(2),
           loanTransactionsCount: loanTransactions.length
         },
-        transactions: await sanitizeTxList(nonLoanTransactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date))),
+        transactions: await sanitizeTxList(
+          nonLoanTransactions.filter(tx => {
+            const txType = (tx.transaction_type || "").toLowerCase();
+            const desc = (tx.description || "").toLowerCase();
+            const benefit = (tx.benefit_type || "").toLowerCase();
+
+            const isEarning = (
+              txType.includes("incentive") ||
+              desc.includes("incentive") ||
+              txType.includes("roi") ||
+              desc.includes("roi") ||
+              txType.includes("benefit") ||
+              desc.includes("benefit") ||
+              txType.includes("referral") ||
+              desc.includes("referral") ||
+              txType.includes("level") ||
+              desc.includes("level") ||
+              txType.includes("bonus") ||
+              desc.includes("bonus") ||
+              txType.includes("commission") ||
+              desc.includes("commission") ||
+              txType.includes("income") ||
+              desc.includes("income") ||
+              txType.includes("margin") ||
+              desc.includes("margin") ||
+              benefit.includes("level") ||
+              benefit.includes("roi") ||
+              benefit.includes("benefit")
+            );
+
+            if (isEarning) return false;
+
+            const isDeposit = (
+              txType.includes("deposit") ||
+              desc.includes("deposit") ||
+              txType.includes("load fund") ||
+              desc.includes("load fund") ||
+              txType.includes("credit deposit") ||
+              desc.includes("add credits") ||
+              txType.includes("add money") ||
+              desc.includes("add money") ||
+              txType.includes("top up") ||
+              desc.includes("top up") ||
+              parseFloat(tx.ew_credit || 0) > 0
+            );
+
+            return isDeposit;
+          }).sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date))
+        ),
         calculation: {
           formula: "Available Balance = Sum of All Credits - Sum of All Debits (excluding loan and top-up transactions)",
           breakdown: `₹${completedAndPendingTx.reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || 0), 0).toFixed(2)} - ₹${completedAndPendingTx.reduce((acc, tx) => acc + (parseFloat(tx.ew_debit) || 0), 0).toFixed(2)} = ₹${Math.max(0, availableBalance).toFixed(2)}`,

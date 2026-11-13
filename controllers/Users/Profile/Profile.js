@@ -191,6 +191,8 @@ const getMemberDetails = async (req, res) => {
       reference_id: memberCodeFormatted,
       virtual_card_number,
       qr_code: foundUser.qr_code || `BMS-P2P:${foundUser.Member_id || foundUser.member_id}`,
+      token: (foundUser.token !== undefined && foundUser.token !== null) ? Number(foundUser.token) : Number(foundUser.tokens || 0),
+      tokens: (foundUser.token !== undefined && foundUser.token !== null) ? Number(foundUser.token) : Number(foundUser.tokens || 0),
       registration_stats: {
         direct: directCount,
         indirect: indirectCount,

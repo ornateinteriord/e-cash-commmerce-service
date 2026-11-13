@@ -14,7 +14,7 @@ const {  triggerMLMCommissions, getMemberCommissionSummary, getDailyPayout, clim
 const { getPendingTransactions, approveWithdrawal, rejectWithdrawal } = require("../controllers/Users/payoutPending/pendingTransactions");
 const { getWalletOverview, getWalletWithdraw, transferWallet, sendTransferOTP, sendWithdrawalOTP, lookupMemberForTransfer, transferP2PWallet, getVendorWalletOverview, vendorWalletWithdraw, getEarningWalletOverview, earningWalletWithdraw, getProductLevelWalletOverview, productLevelWalletWithdraw } = require("../controllers/Users/walletServiece/walletServies");
 const { getMemberCommissionTransactions } = require("../controllers/Member");
-const { getUplineTree } = require("../controllers/Users/mlmService/mlmService");
+const { getUplineTree, syncReferralTokens } = require("../controllers/Users/mlmService/mlmService");
 
 const router = express.Router();
 
@@ -25,6 +25,8 @@ router.put("/member/:memberId", Authenticated, UpdateMemberDetails);
 router.put("/activate-package/:memberId", Authenticated, activateMemberPackage);
 router.get("/sync-all-commissions", syncAllMissingCommissions);
 router.post("/sync-all-commissions", syncAllMissingCommissions);
+router.get("/sync-referral-tokens", syncReferralTokens);
+router.post("/sync-referral-tokens", syncReferralTokens);
 
 
 router.get("/transactions", Authenticated, getTransactionDetails);
