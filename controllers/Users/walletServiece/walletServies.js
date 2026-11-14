@@ -1321,28 +1321,24 @@ const getVendorWalletOverview = async (req, res) => {
       const desc = (tx.description || "").toLowerCase();
       const benefit = (tx.benefit_type || "").toLowerCase();
 
-      const isDailyRoiOrIncentive = (
-        txType.includes("daily incentive") ||
-        desc.includes("daily incentive") ||
-        txType.includes("roi") ||
-        desc.includes("roi") ||
-        txType.includes("level daily roi") ||
-        desc.includes("level daily roi") ||
+      // Vendor Level Benefits are excluded from Sale Value Wallet and shown strictly in Earning Wallet
+      const isVendorLevelBenefit = (
         txType.includes("vendor level benefit") ||
         desc.includes("vendor level benefit") ||
+        txType.includes("vendor benefit") ||
+        desc.includes("vendor benefit") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi") ||
         benefit.includes("vendor level benefit") ||
         benefit.includes("level roi") ||
-        desc.includes("/day") ||
-        desc.includes("/100") ||
-        desc.includes("/50") ||
-        parseFloat(tx.vw_credit || 0) > 0
+        txType === "roi level benefit" ||
+        (/level\s*\d+/i.test(desc) && (desc.includes("/day") || desc.includes("benefit") || desc.includes("roi") || desc.includes("income")))
       );
 
-      const isPackageInvest = (
-        txType.includes("invest amount") ||
-        desc.includes("primary package") ||
-        desc.includes("package activation") ||
-        desc.includes("add-on")
+      // Sale Value Wallet strictly shows Daily Incentive transactions ONLY
+      const isDailyIncentiveOnly = (
+        (txType.includes("daily incentive") || desc.includes("daily incentive")) &&
+        !isVendorLevelBenefit
       );
 
       const isVendorWithdrawal = (
@@ -1350,71 +1346,10 @@ const getVendorWalletOverview = async (req, res) => {
         (txType.includes("withdrawal") && desc.includes("vendor"))
       );
 
-      // Exclude Referral Bonus, Product Level Income, one-time MLM Level Benefits, and Earning Withdrawals
-      const isOneTimeLevelBenefit = (
-        txType.includes("level benefit") ||
-        desc.includes("level benefit") ||
-        txType.includes("level bonus") ||
-        desc.includes("level bonus") ||
-        txType.includes("level income") ||
-        desc.includes("level income")
-      ) && !desc.includes("/day") && !desc.includes("/100") && !desc.includes("/50") && !desc.includes("day ") && !desc.includes("vendor level benefit") && !txType.includes("vendor level benefit") && !benefit.includes("roi") && !txType.includes("roi");
-
-      const isExcluded = (
-        txType.includes("referral") ||
-        desc.includes("referral") ||
-        txType.includes("product level") ||
-        desc.includes("product level") ||
-        txType.includes("product listing") ||
-        desc.includes("product listing") ||
-        isOneTimeLevelBenefit ||
-        txType === "earning withdrawal"
-      );
-
-      return (isDailyRoiOrIncentive || isPackageInvest || isVendorWithdrawal) && !isExcluded;
-    });
-
-    const hasPkgTx = filteredTransactions.some(tx => {
-      const txType = (tx.transaction_type || "").toLowerCase();
-      const desc = (tx.description || "").toLowerCase();
-      return txType.includes("invest amount") || desc.includes("primary package") || desc.includes("package activation");
+      return isDailyIncentiveOnly || isVendorWithdrawal;
     });
 
     const displayTransactions = [...filteredTransactions];
-    if (!hasPkgTx && primaryPkgAmount > 0) {
-      displayTransactions.unshift({
-        transaction_id: `PKG-${member.spackage || actualMemberId}`,
-        transaction_date: member.roi_start_date || member.Date_of_joining || new Date(),
-        description: `Purchased Package (${member.spackage || '₹' + primaryPkgAmount})`,
-        transaction_type: "Package Purchase",
-        amount: primaryPkgAmount,
-        vw_credit: primaryPkgAmount.toString(),
-        gross_amount: primaryPkgAmount,
-        status: "Completed",
-        createdAt: member.Date_of_joining || new Date()
-      });
-    }
-
-    addonPackages.forEach(addon => {
-      const hasAddon = filteredTransactions.some(tx => {
-        const idStr = String(tx.transaction_id || "");
-        const descStr = String(tx.description || "");
-        return idStr.includes(String(addon.request_id || addon._id)) || descStr.includes(String(addon.request_id || ""));
-      });
-      if (!hasAddon && parseFloat(addon.amount) > 0) {
-        displayTransactions.push({
-          transaction_id: `ADDON-${addon.request_id || addon._id}`,
-          transaction_date: addon.created_at || addon.approved_at || new Date(),
-          description: `Add-On Package (${addon.package_name || '₹' + addon.amount})`,
-          transaction_type: "Add-On Package",
-          amount: parseFloat(addon.amount),
-          vw_credit: String(addon.amount),
-          gross_amount: parseFloat(addon.amount),
-          status: "Completed",
-          createdAt: addon.created_at || new Date()
-        });
-      }
-    });
 
     displayTransactions.forEach(tx => {
       const desc = String(tx.description || "");
@@ -1819,25 +1754,29 @@ const getEarningWalletOverview = async (req, res) => {
         desc.includes("refund")
       );
 
-      const isROI = (
-        txType.includes("daily incentive") ||
-        desc.includes("daily incentive") ||
-        txType.includes("roi") ||
-        desc.includes("roi") ||
-        txType.includes("level daily roi") ||
-        desc.includes("level daily roi") ||
+      // Vendor Level Benefits now show inside Earning Wallet
+      const isVendorLevelBenefit = (
         txType.includes("vendor level benefit") ||
         desc.includes("vendor level benefit") ||
+        txType.includes("vendor benefit") ||
+        desc.includes("vendor benefit") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi") ||
         benefit.includes("vendor level benefit") ||
         benefit.includes("level roi") ||
-        desc.includes("/day") ||
-        desc.includes("/100") ||
-        desc.includes("/50") ||
-        parseFloat(tx.vw_credit || 0) > 0
+        txType === "roi level benefit" ||
+        (/level\s*\d+/i.test(desc) && (desc.includes("/day") || desc.includes("/100") || desc.includes("/50") || desc.includes("benefit") || desc.includes("roi") || desc.includes("income")))
       );
 
-      // User Rule: All referral and level commissions show in Earning Wallet ONLY (except ROI)
+      // Only Daily Incentive is excluded from Earning Wallet (kept in Sale Value Wallet)
+      const isDailyIncentiveOnly = (
+        (txType.includes("daily incentive") || desc.includes("daily incentive")) &&
+        !isVendorLevelBenefit
+      );
+
+      // User Rule: All referral and level commissions, INCLUDING Vendor Level Benefits, show in Earning Wallet
       const isEarningIncome = (
+        isVendorLevelBenefit ||
         txType.includes("referral") ||
         desc.includes("referral") ||
         txType.includes("level income") ||
@@ -1853,7 +1792,7 @@ const getEarningWalletOverview = async (req, res) => {
         (benefit === "direct" && !isDepositOrLoadFund) ||
         txType.includes("repayment commission") ||
         desc.includes("repayment commission")
-      ) && !isDepositOrLoadFund && !isROI;
+      ) && !isDepositOrLoadFund && !isDailyIncentiveOnly;
 
       const isEarningWithdrawal = (
         txType === "earning withdrawal" ||
@@ -1862,7 +1801,7 @@ const getEarningWalletOverview = async (req, res) => {
       );
 
       const isExcluded = (
-        isROI ||
+        isDailyIncentiveOnly ||
         txType.includes("invest amount") ||
         txType === "vendor withdrawal" ||
         isDepositOrLoadFund
@@ -1876,7 +1815,23 @@ const getEarningWalletOverview = async (req, res) => {
         const txType = (tx.transaction_type || "").toLowerCase();
         return !txType.includes("withdrawal") && tx.status === "Completed";
       })
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || parseFloat(tx.vw_credit) || parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || 0), 0);
+      .reduce((acc, tx) => {
+        let val = parseFloat(tx.ew_credit || tx.vw_credit || tx.gross_amount || tx.net_amount || tx.amount || 0);
+        if (!val || val === 0 || isNaN(val)) {
+          const desc = String(tx.description || "");
+          const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
+          if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
+          else {
+            const pctMatch = desc.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*₹?\s*(\d+(?:\.\d+)?)/i);
+            if (pctMatch) {
+              const rate = parseFloat(pctMatch[1]);
+              const base = parseFloat(pctMatch[2]);
+              if (rate > 0 && base > 0) val = (base * rate) / 100;
+            }
+          }
+        }
+        return acc + (val || 0);
+      }, 0);
 
     const completedWithdrawals = transactions
       .filter(tx => {
@@ -2075,25 +2030,29 @@ const earningWalletWithdraw = async (req, res) => {
         desc.includes("refund")
       );
 
-      const isROI = (
-        txType.includes("daily incentive") ||
-        desc.includes("daily incentive") ||
-        txType.includes("roi") ||
-        desc.includes("roi") ||
-        txType.includes("level daily roi") ||
-        desc.includes("level daily roi") ||
+      // Vendor Level Benefits now show inside Earning Wallet
+      const isVendorLevelBenefit = (
         txType.includes("vendor level benefit") ||
         desc.includes("vendor level benefit") ||
+        txType.includes("vendor benefit") ||
+        desc.includes("vendor benefit") ||
+        txType.includes("level daily roi") ||
+        desc.includes("level daily roi") ||
         benefit.includes("vendor level benefit") ||
         benefit.includes("level roi") ||
-        desc.includes("/day") ||
-        desc.includes("/100") ||
-        desc.includes("/50") ||
-        parseFloat(tx.vw_credit || 0) > 0
+        txType === "roi level benefit" ||
+        (/level\s*\d+/i.test(desc) && (desc.includes("/day") || desc.includes("/100") || desc.includes("/50") || desc.includes("benefit") || desc.includes("roi") || desc.includes("income")))
       );
 
-      // User Rule: All referral and level commissions show in Earning Wallet ONLY (except ROI)
+      // Only Daily Incentive is excluded from Earning Wallet (kept in Sale Value Wallet)
+      const isDailyIncentiveOnly = (
+        (txType.includes("daily incentive") || desc.includes("daily incentive")) &&
+        !isVendorLevelBenefit
+      );
+
+      // User Rule: All referral and level commissions, INCLUDING Vendor Level Benefits, show in Earning Wallet
       const isEarningIncome = (
+        isVendorLevelBenefit ||
         txType.includes("referral") ||
         desc.includes("referral") ||
         txType.includes("level income") ||
@@ -2109,7 +2068,7 @@ const earningWalletWithdraw = async (req, res) => {
         (benefit === "direct" && !isDepositOrLoadFund) ||
         txType.includes("repayment commission") ||
         desc.includes("repayment commission")
-      ) && !isDepositOrLoadFund && !isROI;
+      ) && !isDepositOrLoadFund && !isDailyIncentiveOnly;
 
       const isEarningWithdrawal = (
         txType === "earning withdrawal" ||
@@ -2118,7 +2077,7 @@ const earningWalletWithdraw = async (req, res) => {
       );
 
       const isExcluded = (
-        isROI ||
+        isDailyIncentiveOnly ||
         txType.includes("invest amount") ||
         txType === "vendor withdrawal" ||
         isDepositOrLoadFund
@@ -2129,7 +2088,23 @@ const earningWalletWithdraw = async (req, res) => {
 
     const totalIncome = earningTxs
       .filter(tx => !tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
-      .reduce((acc, tx) => acc + (parseFloat(tx.ew_credit) || parseFloat(tx.vw_credit) || parseFloat(tx.gross_amount) || parseFloat(tx.net_amount) || 0), 0);
+      .reduce((acc, tx) => {
+        let val = parseFloat(tx.ew_credit || tx.vw_credit || tx.gross_amount || tx.net_amount || tx.amount || 0);
+        if (!val || val === 0 || isNaN(val)) {
+          const desc = String(tx.description || "");
+          const dayMatch = desc.match(/(?:₹\s*)?(\d+(?:\.\d+)?)\s*\/\s*day/i);
+          if (dayMatch && parseFloat(dayMatch[1]) > 0) val = parseFloat(dayMatch[1]);
+          else {
+            const pctMatch = desc.match(/(\d+(?:\.\d+)?)\s*%\s*of\s*₹?\s*(\d+(?:\.\d+)?)/i);
+            if (pctMatch) {
+              const rate = parseFloat(pctMatch[1]);
+              const base = parseFloat(pctMatch[2]);
+              if (rate > 0 && base > 0) val = (base * rate) / 100;
+            }
+          }
+        }
+        return acc + (val || 0);
+      }, 0);
 
     const completedWithdrawals = earningTxs
       .filter(tx => tx.transaction_type?.toLowerCase().includes("withdrawal") && tx.status === "Completed")
