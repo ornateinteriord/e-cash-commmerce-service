@@ -566,7 +566,7 @@ const updateSponsorReferrals = async (sponsorId, newMemberId) => {
                 ]
               },
               {
-                $inc: { token: 1, tokens: 1 }
+                $inc: { token: 1 }
               }
             );
             console.log(`🪙 Awarded 1 token to Level ${upline.level} upline vendor (${upline.sponsor_id})`);
@@ -576,7 +576,7 @@ const updateSponsorReferrals = async (sponsorId, newMemberId) => {
         // Fallback: If uplines list is empty, ensure direct sponsor at least gets 1 token
         await MemberModel.updateOne(
           { _id: sponsor._id },
-          { $inc: { token: 1, tokens: 1 } }
+          { $inc: { token: 1 } }
         );
         console.log(`🪙 Awarded 1 token to direct sponsor ${actualSponsorId}`);
       }
@@ -981,44 +981,11 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
 
 const syncReferralTokens = async (req, res) => {
   try {
-    const allMembers = await MemberModel.find({}).lean();
-    const tokenCounts = {};
-
-    for (const m of allMembers) {
-      const memId = m.Member_id || m.member_id;
-      if (!memId) continue;
-      const uplines = await findUplineSponsors(memId, 20);
-      for (const u of uplines) {
-        const upId = u.sponsor_id;
-        if (upId) {
-          tokenCounts[upId] = (tokenCounts[upId] || 0) + 1;
-        }
-      }
-    }
-
-    const bulkOps = Object.entries(tokenCounts).map(([sponsorId, count]) => ({
-      updateMany: {
-        filter: {
-          $or: [
-            { Member_id: sponsorId },
-            { member_id: sponsorId },
-            { member_code: sponsorId },
-            { mobileno: sponsorId }
-          ]
-        },
-        update: { $inc: { token: count, tokens: count } }
-      }
-    }));
-
-    if (bulkOps.length > 0) {
-      await MemberModel.bulkWrite(bulkOps);
-    }
-
+    // Bulk overwrite disabled to preserve existing stored token balances.
+    // Tokens are safely incremented on each new referral.
     const result = {
       success: true,
-      message: `Successfully recalculated referral tokens for ${Object.keys(tokenCounts).length} vendors (up to 20 uplines)`,
-      syncedVendorsCount: Object.keys(tokenCounts).length,
-      sampleTokens: Object.entries(tokenCounts).slice(0, 10)
+      message: "Tokens are maintained incrementally on each referral. Existing balances preserved.",
     };
 
     if (res && typeof res.json === 'function') {

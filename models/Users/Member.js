@@ -92,7 +92,6 @@ const MemberSchema = new mongoose.Schema(
     vendor_wallet: { type: Number, default: 0, set: v => Math.round(v * 10000) / 10000 },
     earning_wallet: { type: Number, default: 0, set: v => Math.round(v * 10000) / 10000 },
     token: { type: Number, default: 0 },
-    tokens: { type: Number, default: 0 },
     qr_code: { type: String, unique: true, sparse: true },
 
     // NIDHI SPECIFIC FIELDS (Lowercase mappings)
