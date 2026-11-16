@@ -80,7 +80,71 @@ const getCustomerTokens = async (req, res) => {
   }
 };
 
+/**
+ * Toggle or update customer status (Active / Inactive)
+ */
+const updateCustomerStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, isActive } = req.body;
+
+    const client = mongoose.connection.client;
+    let custCol = null;
+
+    if (client) {
+      try {
+        custCol = client.db("ornate_auth").collection("customers");
+      } catch (err) {}
+    }
+    if (!custCol && mongoose.connection.db) {
+      custCol = mongoose.connection.db.collection("customers");
+    }
+
+    if (!custCol) {
+      return res.status(500).json({ success: false, message: "Customer collection not accessible" });
+    }
+
+    const newIsActive = isActive !== undefined ? Boolean(isActive) : String(status).toLowerCase() === "active";
+
+    const filter = {
+      $or: [
+        { customerId: id },
+        { customer_id: id },
+        { mobileNumber: id },
+        { phone: id },
+        ...(mongoose.Types.ObjectId.isValid(id) ? [{ _id: new mongoose.Types.ObjectId(id) }] : [])
+      ]
+    };
+
+    const updateDoc = {
+      $set: {
+        isActive: newIsActive,
+        status: newIsActive ? "Active" : "Inactive",
+        updatedAt: new Date()
+      }
+    };
+
+    const result = await custCol.updateOne(filter, updateDoc);
+
+    return res.status(200).json({
+      success: true,
+      message: `Customer status updated to ${newIsActive ? 'Active' : 'Inactive'}`,
+      isActive: newIsActive,
+      status: newIsActive ? "Active" : "Inactive"
+    });
+  } catch (error) {
+    console.error("❌ Error updating customer status:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update customer status",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
-  getCustomerTokens
+  getCustomerTokens,
+  getCustomers: getCustomerTokens,
+  updateCustomerStatus
 };
 

@@ -5,7 +5,7 @@ const getTransactionDetails = require("../controllers/Transaction/Transaction");
 const { getEpinsSummary, generatePackage } = require("../controllers/Users/Epin/epin");
 const { getDailyPayout,   getRewardLoansByStatus, processRewardLoan, triggerDailyROI, getROISummary, getROIBenefits, getLevelRoiSchedules } = require("../controllers/Users/Payout/PayoutController");
 const { processAutoUpgrades } = require("../controllers/Packages/autoUpgradeService");
-const { getCustomerTokens } = require("../controllers/Admin/CustomerToken/customerTokenController");
+const { getCustomerTokens, updateCustomerStatus } = require("../controllers/Admin/CustomerToken/customerTokenController");
 const { getVendorUplines, getCustomerUplines, getVendorTokenContributors, getCustomerTokenContributors } = require("../controllers/Admin/Upline/uplineController");
 
 // NIDHI ADMIN CONTROLLERS
@@ -27,6 +27,8 @@ const router = require("express").Router();
 router.put("/update-password",Authenticated,authorizeRoles("ADMIN"),UpdatePassword)
 router.get("/members",Authenticated,authorizeRoles("ADMIN"),getMemberDetails)
 router.get("/customer-tokens",Authenticated,authorizeRoles("ADMIN", "ADMIN_01"),getCustomerTokens)
+router.get("/customers",Authenticated,authorizeRoles("ADMIN", "ADMIN_01"),getCustomerTokens)
+router.put("/customer/status/:id",Authenticated,authorizeRoles("ADMIN"),updateCustomerStatus)
 router.get("/upline-tree/vendor/:id",Authenticated,authorizeRoles("ADMIN", "ADMIN_01"),getVendorUplines)
 router.get("/upline-tree/customer/:id",Authenticated,authorizeRoles("ADMIN", "ADMIN_01"),getCustomerUplines)
 router.get("/token-contributors/vendor/:id",Authenticated,authorizeRoles("ADMIN", "ADMIN_01"),getVendorTokenContributors)
