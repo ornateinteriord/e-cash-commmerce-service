@@ -294,7 +294,7 @@ exports.getKycSubmissions = async (req, res) => {
     const skip = (Math.max(parseInt(page, 10), 1) - 1) * parseInt(limit, 10);
 
     const submissions = await MemberModel.find(filter)
-      .select("Member_id Name mobileno email account_number ifsc_code bank_name Pan_no kycStatus beneficiaryStatus beneficiaryId address panImage aadhaarImage checkImage passbookImage rationCardImage profile_image createdAt updatedAt")
+      .select("Member_id Name mobileno email account_number ifsc_code bank_name Pan_no pan_no aadharcard_no kycStatus beneficiaryStatus beneficiaryId address panImage aadhaarImage checkImage passbookImage rationCardImage profile_image createdAt updatedAt")
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(parseInt(limit, 10));
