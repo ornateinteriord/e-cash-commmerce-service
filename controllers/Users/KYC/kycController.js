@@ -1,27 +1,66 @@
 const MemberModel = require("../../../models/Users/Member");
+const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 
 // Submit KYC details
 exports.submitKYC = async (req, res) => {
   try {
     const {
       ref_no,
+      member_id,
+      Member_id,
       bankAccount,
+      account_number,
       ifsc,
+      ifsc_code,
       pan,
+      Pan_no,
       aadhar_no,
       address,
       bankName,
+      bank_name,
       panImage,
       aadhaarImage,
       checkImage,
       passbookImage,
       rationCardImage,
       profileImage,
-      upiId
+      upiId,
+      upi_id
     } = req.body;
 
-    // Find the member by ref_no
-    const member = await MemberModel.findOne({ Member_id: ref_no });
+    // Resolve member identification from body or JWT token header
+    let targetMemberId = ref_no || Member_id || member_id || req.body.memberId || req.body.id;
+
+    if (!targetMemberId && req.headers.authorization) {
+      try {
+        const token = req.headers.authorization.split(" ")[1];
+        if (token) {
+          const jwtSecret = process.env.JWT_SECRET || "blusky_microservices_secure_jwt_secret_key_2026";
+          const decoded = jwt.verify(token, jwtSecret);
+          targetMemberId = decoded.memberId || decoded.id || decoded.Member_id;
+        }
+      } catch (tokenErr) {
+        console.warn("[KYC] Could not decode authorization token:", tokenErr.message);
+      }
+    }
+
+    if (!targetMemberId) {
+      return res.status(400).json({ message: "Member identifier (ref_no / Member_id) is required" });
+    }
+
+    // Find the member flexibly by Member_id, member_code, mobileno, or _id
+    let member = await MemberModel.findOne({
+      $or: [
+        { Member_id: targetMemberId },
+        { member_code: targetMemberId },
+        { mobileno: targetMemberId }
+      ]
+    });
+
+    if (!member && mongoose.Types.ObjectId.isValid(targetMemberId)) {
+      member = await MemberModel.findById(targetMemberId);
+    }
 
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
@@ -120,22 +159,28 @@ exports.submitKYC = async (req, res) => {
     // ==================== END CASHFREE VERIFICATION ====================
 
     // Update member with KYC details
-    member.account_number = bankAccount;
-    member.ifsc_code = ifsc;
-    member.Pan_no = pan;
-    member.aadharcard_no = aadhar_no;
-    member.bank_name = bankName;
-    member.address = address;
-    member.upi_id = upiId;
+    const finalBankAccount = bankAccount || account_number;
+    const finalIfsc = ifsc || ifsc_code;
+    const finalPan = pan || Pan_no;
+    const finalBankName = bankName || bank_name;
+    const finalUpi = upiId || upi_id;
+
+    if (finalBankAccount) member.account_number = finalBankAccount;
+    if (finalIfsc) member.ifsc_code = finalIfsc;
+    if (finalPan) member.Pan_no = finalPan;
+    if (aadhar_no) member.aadharcard_no = aadhar_no;
+    if (finalBankName) member.bank_name = finalBankName;
+    if (address) member.address = address;
+    if (finalUpi) member.upi_id = finalUpi;
     member.kycStatus = "PROCESSING";
 
     // Update document URLs
-    member.panImage = panImage;
-    member.aadhaarImage = aadhaarImage;
-    member.checkImage = checkImage;
-    member.passbookImage = passbookImage;
-    member.rationCardImage = rationCardImage;
-    member.profile_image = profileImage;
+    if (panImage) member.panImage = panImage;
+    if (aadhaarImage) member.aadhaarImage = aadhaarImage;
+    if (checkImage) member.checkImage = checkImage;
+    if (passbookImage) member.passbookImage = passbookImage;
+    if (rationCardImage) member.rationCardImage = rationCardImage;
+    if (profileImage) member.profile_image = profileImage;
 
     // Save the updated member
     await member.save();
