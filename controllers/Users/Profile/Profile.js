@@ -10,16 +10,42 @@ const AddOnPackageModel = require("../../../models/Packages/AddOnPackage");
 
 const getMemberDetails = async (req, res) => {
   try {
-    const id = req.user.id;
+    const requestedParam = req.params.id || req.params.memberId;
+    let foundUser = null;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid User ID"
-      });
+    // 1. If a specific member was requested in URL params (e.g. /user/member/9100000000)
+    if (requestedParam && requestedParam !== "undefined" && requestedParam !== "null") {
+      const orConditions = [
+        { Member_id: requestedParam },
+        { member_id: requestedParam },
+        { mobileno: requestedParam },
+        { contactno: requestedParam },
+        { member_code: requestedParam }
+      ];
+      if (mongoose.Types.ObjectId.isValid(requestedParam)) {
+        orConditions.unshift({ _id: requestedParam });
+      }
+      foundUser = await MemberModel.findOne({ $or: orConditions });
+      if (!foundUser && mongoose.Types.ObjectId.isValid(requestedParam)) {
+        foundUser = await AdminModel.findById(requestedParam);
+      }
     }
 
-    const foundUser = await MemberModel.findById(id) || await AdminModel.findById(id);
+    // 2. If not found by param or param was not supplied, use token user
+    if (!foundUser && req.user?.id) {
+      if (mongoose.Types.ObjectId.isValid(req.user.id)) {
+        foundUser = await MemberModel.findById(req.user.id) || await AdminModel.findById(req.user.id);
+      }
+      if (!foundUser && req.user?.memberId) {
+        foundUser = await MemberModel.findOne({
+          $or: [
+            { Member_id: req.user.memberId },
+            { member_id: req.user.memberId },
+            { mobileno: req.user.memberId }
+          ]
+        });
+      }
+    }
 
     if (!foundUser) {
       return res.status(404).json({
@@ -28,8 +54,8 @@ const getMemberDetails = async (req, res) => {
       });
     }
 
-    // If admin, return all members with their total package value
-    if (foundUser instanceof AdminModel) {
+    // If an Admin account itself was fetched (and no specific member param was requested)
+    if (foundUser instanceof AdminModel && (!requestedParam || requestedParam === String(foundUser._id))) {
       const members = await MemberModel.aggregate([
         {
           $lookup: {
@@ -182,9 +208,28 @@ const getMemberDetails = async (req, res) => {
     }
     const canReinvest = true; // Vendors can load funds and re-invest freely anytime
 
+    // Build structured kyc_details for client consumers
+    const kycDetails = {
+      accountName: foundUser.accountName || foundUser.Name || foundUser.name || '',
+      account_number: foundUser.account_number || '',
+      ifsc_code: foundUser.ifsc_code || '',
+      bank_name: foundUser.bank_name || '',
+      upi_id: foundUser.upi_id || '',
+      panImage: foundUser.panImage || null,
+      aadhaarImage: foundUser.aadhaarImage || null,
+      profileImage: foundUser.profile_image || foundUser.profileImage || null,
+      kycStatus: foundUser.kycStatus || 'PENDING'
+    };
+
     // Add registration data to response
     const responseData = {
       ...foundUser.toObject(),
+      account_number: foundUser.account_number || '',
+      ifsc_code: foundUser.ifsc_code || '',
+      bank_name: foundUser.bank_name || '',
+      upi_id: foundUser.upi_id || '',
+      accountName: foundUser.accountName || foundUser.Name || foundUser.name || '',
+      kyc_details: kycDetails,
       level: calculatedLevel,
       member_code: memberCodeFormatted,
       user_id: memberCodeFormatted,

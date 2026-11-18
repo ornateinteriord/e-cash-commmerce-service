@@ -1,6 +1,6 @@
+const mongoose = require("mongoose");
 const MemberModel = require("../../../models/Users/Member");
 const jwt = require("jsonwebtoken");
-const mongoose = require("mongoose");
 
 // Submit KYC details
 exports.submitKYC = async (req, res) => {
@@ -9,6 +9,8 @@ exports.submitKYC = async (req, res) => {
       ref_no,
       member_id,
       Member_id,
+      memberId,
+      userId,
       bankAccount,
       account_number,
       ifsc,
@@ -20,17 +22,22 @@ exports.submitKYC = async (req, res) => {
       bankName,
       bank_name,
       panImage,
+      pan_image,
       aadhaarImage,
+      aadhaar_image,
       checkImage,
       passbookImage,
       rationCardImage,
       profileImage,
+      profile_image,
       upiId,
-      upi_id
+      upi_id,
+      accountName,
+      account_name
     } = req.body;
 
-    // Resolve member identification from body or JWT token header
-    let targetMemberId = ref_no || Member_id || member_id || req.body.memberId || req.body.id;
+    // Resolve member identification from body, req.user, or JWT token header
+    let targetMemberId = ref_no || Member_id || member_id || memberId || userId || req.user?.memberId || req.user?.Member_id || req.user?.id;
 
     if (!targetMemberId && req.headers.authorization) {
       try {
@@ -46,17 +53,22 @@ exports.submitKYC = async (req, res) => {
     }
 
     if (!targetMemberId) {
-      return res.status(400).json({ message: "Member identifier (ref_no / Member_id) is required" });
+      return res.status(400).json({ message: "Member identifier (ref_no / Member_id / memberId) is required" });
     }
 
-    // Find the member flexibly by Member_id, member_code, mobileno, or _id
-    let member = await MemberModel.findOne({
-      $or: [
-        { Member_id: targetMemberId },
-        { member_code: targetMemberId },
-        { mobileno: targetMemberId }
-      ]
-    });
+    const orConditions = [
+      { Member_id: targetMemberId },
+      { member_id: targetMemberId },
+      { mobileno: targetMemberId },
+      { contactno: targetMemberId },
+      { member_code: targetMemberId }
+    ];
+    if (mongoose.Types.ObjectId.isValid(targetMemberId)) {
+      orConditions.unshift({ _id: targetMemberId });
+    }
+
+    // Find the member flexibly
+    let member = await MemberModel.findOne({ $or: orConditions });
 
     if (!member && mongoose.Types.ObjectId.isValid(targetMemberId)) {
       member = await MemberModel.findById(targetMemberId);
@@ -66,10 +78,20 @@ exports.submitKYC = async (req, res) => {
       return res.status(404).json({ message: "Member not found" });
     }
 
-    // Validate that all required documents are provided
+    const finalPanImage = panImage || pan_image;
+    const finalAadhaarImage = aadhaarImage || aadhaar_image;
+    const finalProfileImage = profileImage || profile_image || req.body.member_image;
+    const finalAccount = bankAccount || account_number;
+    const finalIfsc = ifsc || ifsc_code;
+    const finalBankName = bankName || bank_name;
+    const finalUpi = upiId || upi_id;
+    const finalAccountName = accountName || account_name;
+    const finalPan = pan || Pan_no || req.body.pan_no || req.body.panNo;
+    const finalAadhaar = aadhar_no || req.body.aadharcard_no || req.body.aadhaar_no || req.body.aadhaar || req.body.adhaar;
+
+    // Validate that required documents are provided (Profile image is optional)
     const missingDocuments = [];
-    if (!panImage && !aadhaarImage) missingDocuments.push("PAN / Aadhaar Image");
-    if (!profileImage) missingDocuments.push("Profile Image");
+    if (!finalPanImage && !finalAadhaarImage) missingDocuments.push("PAN / Aadhaar Image");
 
     if (missingDocuments.length > 0) {
       return res.status(400).json({
@@ -159,33 +181,49 @@ exports.submitKYC = async (req, res) => {
     // ==================== END CASHFREE VERIFICATION ====================
 
     // Update member with KYC details
-    const finalBankAccount = bankAccount || account_number;
-    const finalIfsc = ifsc || ifsc_code;
-    const finalPan = pan || Pan_no;
-    const finalBankName = bankName || bank_name;
-    const finalUpi = upiId || upi_id;
-
-    if (finalBankAccount) member.account_number = finalBankAccount;
+    if (finalAccount) member.account_number = finalAccount;
     if (finalIfsc) member.ifsc_code = finalIfsc;
-    if (finalPan) member.Pan_no = finalPan;
-    if (aadhar_no) member.aadharcard_no = aadhar_no;
     if (finalBankName) member.bank_name = finalBankName;
-    if (address) member.address = address;
     if (finalUpi) member.upi_id = finalUpi;
+    if (finalAccountName) member.accountName = finalAccountName;
+    if (finalPan) {
+      member.Pan_no = finalPan;
+      member.pan_no = finalPan;
+    }
+    if (finalAadhaar) member.aadharcard_no = finalAadhaar;
+    if (address) member.address = address;
     member.kycStatus = "PROCESSING";
 
     // Update document URLs
-    if (panImage) member.panImage = panImage;
-    if (aadhaarImage) member.aadhaarImage = aadhaarImage;
+    if (finalPanImage) member.panImage = finalPanImage;
+    if (finalAadhaarImage) member.aadhaarImage = finalAadhaarImage;
     if (checkImage) member.checkImage = checkImage;
     if (passbookImage) member.passbookImage = passbookImage;
     if (rationCardImage) member.rationCardImage = rationCardImage;
-    if (profileImage) member.profile_image = profileImage;
+    if (finalProfileImage) {
+      member.profile_image = finalProfileImage;
+      member.profileImage = finalProfileImage;
+    }
 
     // Save the updated member
     await member.save();
 
-    res.json({ message: "KYC submitted successfully with verified bank details" });
+    res.json({
+      success: true,
+      message: "KYC submitted successfully with verified bank details",
+      data: {
+        accountName: member.accountName || member.Name,
+        account_number: member.account_number,
+        ifsc_code: member.ifsc_code,
+        bank_name: member.bank_name,
+        upi_id: member.upi_id,
+        Pan_no: member.Pan_no || member.pan_no,
+        aadharcard_no: member.aadharcard_no,
+        panImage: member.panImage,
+        profileImage: member.profile_image || member.profileImage,
+        kycStatus: member.kycStatus
+      }
+    });
   } catch (error) {
     console.error("Error submitting KYC:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -195,10 +233,20 @@ exports.submitKYC = async (req, res) => {
 // Approve KYC
 exports.approveKYC = async (req, res) => {
   try {
-    const { ref_no } = req.body;
+    const { ref_no, memberId } = req.body;
+    const targetRef = ref_no || memberId;
 
-    // Find the member by ref_no
-    const member = await MemberModel.findOne({ Member_id: ref_no });
+    // Find the member by ref_no / Member_id / mobile
+    const member = await MemberModel.findOne({
+      $or: [
+        { Member_id: targetRef },
+        { member_id: targetRef },
+        { mobileno: targetRef },
+        { contactno: targetRef },
+        { member_code: targetRef },
+        ...(mongoose.Types.ObjectId.isValid(targetRef) ? [{ _id: targetRef }] : [])
+      ]
+    });
 
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
@@ -218,14 +266,20 @@ exports.approveKYC = async (req, res) => {
   }
 };
 
-// Get KYC submissions (default: PENDING)
-// Get KYC submissions (only PROCESSING)
+// Get KYC submissions (support filter by status: PENDING, PROCESSING, APPROVED, REJECTED, or ALL)
 exports.getKycSubmissions = async (req, res) => {
   try {
-    const { q, page = 1, limit = 50 } = req.query;
+    const { status, q, page = 1, limit = 50 } = req.query;
 
-    // Always fetch only PROCESSING KYCs
-    const filter = { kycStatus: "PROCESSING" };
+    let filter = {};
+    if (status && status !== "ALL") {
+      filter.kycStatus = { $regex: new RegExp(`^${status}$`, "i") };
+    } else {
+      // By default or for ALL pending review, show submissions awaiting action or all submitted
+      filter.kycStatus = status === "ALL" 
+        ? { $in: ["PROCESSING", "PENDING", "APPROVED", "REJECTED"] }
+        : { $in: ["PROCESSING", "PENDING"] };
+    }
 
     // 🔍 Search filter
     if (q) {
@@ -257,6 +311,63 @@ exports.getKycSubmissions = async (req, res) => {
   } catch (error) {
     console.error("Error fetching KYC submissions:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// Get specific member KYC details (fast & lightweight single query)
+exports.getMemberKycDetails = async (req, res) => {
+  try {
+    const targetRef = req.params.memberId || req.query.memberId || req.user?.memberId || req.user?.Member_id || req.user?.id;
+    if (!targetRef) {
+      return res.status(400).json({ success: false, message: "Member identifier is required" });
+    }
+
+    const orConditions = [
+      { Member_id: targetRef },
+      { member_id: targetRef },
+      { mobileno: targetRef },
+      { contactno: targetRef },
+      { member_code: targetRef }
+    ];
+    if (mongoose.Types.ObjectId.isValid(targetRef)) {
+      orConditions.unshift({ _id: targetRef });
+    }
+
+    const member = await MemberModel.findOne({ $or: orConditions })
+      .select("Member_id Name name accountName account_number ifsc_code bank_name upi_id Pan_no pan_no aadharcard_no panImage aadhaarImage profile_image profileImage member_image kycStatus beneficiaryStatus beneficiaryId address");
+
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Member not found" });
+    }
+
+    const kycDetails = {
+      accountName: member.accountName || member.Name || member.name || '',
+      account_number: member.account_number || '',
+      ifsc_code: member.ifsc_code || '',
+      bank_name: member.bank_name || '',
+      upi_id: member.upi_id || '',
+      Pan_no: member.Pan_no || member.pan_no || '',
+      pan_no: member.pan_no || member.Pan_no || '',
+      aadharcard_no: member.aadharcard_no || '',
+      panImage: member.panImage || null,
+      aadhaarImage: member.aadhaarImage || null,
+      profileImage: member.profile_image || member.profileImage || member.member_image || null,
+      kycStatus: member.kycStatus || 'PENDING',
+      beneficiaryStatus: member.beneficiaryStatus || 'NOT_CREATED',
+      beneficiaryId: member.beneficiaryId || '',
+      address: member.address || ''
+    };
+
+    res.json({
+      success: true,
+      data: {
+        ...member.toObject(),
+        kyc_details: kycDetails
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching member KYC details:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
