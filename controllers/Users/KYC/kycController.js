@@ -89,7 +89,8 @@ exports.submitKYC = async (req, res) => {
     const finalPan = pan || Pan_no || req.body.pan_no || req.body.panNo;
     const finalAadhaar = aadhar_no || req.body.aadharcard_no || req.body.aadhaar_no || req.body.aadhaar || req.body.adhaar;
 
-    // Validate that required documents are provided (Profile image is optional)
+    // Validate that required documents are provided (Identity upload commented out per request)
+    /*
     const missingDocuments = [];
     if (!finalPanImage && !finalAadhaarImage) missingDocuments.push("PAN / Aadhaar Image");
 
@@ -98,6 +99,7 @@ exports.submitKYC = async (req, res) => {
         message: `Missing required fields/documents: ${missingDocuments.join(", ")}`
       });
     }
+    */
 
     // ==================== CASHFREE BANK VERIFICATION ====================
     // Note: Currently commented out - Admin will manually validate bank details
@@ -204,6 +206,19 @@ exports.submitKYC = async (req, res) => {
       member.profile_image = finalProfileImage;
       member.profileImage = finalProfileImage;
     }
+
+    // Also populate nested kyc_details object
+    member.kyc_details = {
+      accountName: member.accountName || member.Name,
+      account_number: member.account_number,
+      ifsc_code: member.ifsc_code,
+      bank_name: member.bank_name,
+      upi_id: member.upi_id,
+      pan_no: member.pan_no || member.Pan_no,
+      aadharcard_no: member.aadharcard_no,
+      panImage: member.panImage,
+      profileImage: member.profile_image || member.profileImage
+    };
 
     // Save the updated member
     await member.save();
