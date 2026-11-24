@@ -22,6 +22,7 @@ const MemberSchema = new mongoose.Schema(
     Date_of_joining: { type: String, default: () => moment().format("YYYY-MM-DD") },
     spackage: { type: String },
     package_value: { type: Number, set: v => Math.round(v * 10000) / 10000 },
+    is_non_income: { type: Boolean, default: false },
     epin_no: { type: String },
     amount: { type: Number, set: v => Math.round(v * 10000) / 10000 },
     mode_of_payment: { type: String },

@@ -288,17 +288,28 @@ const activateMemberPackage = async (req, res) => {
 
     const actualMemberId = existingMember.Member_id || existingMember.member_id || memberId;
 
+    // Check if this is a Non-Income package
+    const isNonIncome = (
+      packageType === "Ecash_25000_NonIncome" ||
+      packageType === "PKG-25000-NON-INCOME" ||
+      String(packageType).toLowerCase().includes("nonincome") ||
+      String(packageType).toLowerCase().includes("non_income") ||
+      String(packageType).toLowerCase().includes("non income")
+    );
+
     // Dynamically accept any Ecash / BMS / PKG / direct numeric amount
     let selectedPackage = null;
-    if (packageType && (packageType.startsWith("Eshopy_") || packageType.startsWith("Ecash_") || packageType.startsWith("BMS_") || packageType.startsWith("PKG-") || packageType.startsWith("PKG_"))) {
+    if (isNonIncome) {
+      selectedPackage = { name: "25000 Package (Non Income)", value: 25000, isNonIncome: true };
+    } else if (packageType && (packageType.startsWith("Eshopy_") || packageType.startsWith("Ecash_") || packageType.startsWith("BMS_") || packageType.startsWith("PKG-") || packageType.startsWith("PKG_"))) {
       const amtStr = packageType.replace(/^(Eshopy_|Ecash_|BMS_|PKG-|PKG_)/, "");
       const amt = Number(amtStr);
       if (!isNaN(amt) && amt > 0) {
-        selectedPackage = { name: `PKG-${amt}`, value: amt };
+        selectedPackage = { name: `PKG-${amt}`, value: amt, isNonIncome: false };
       }
     } else if (!isNaN(Number(packageType)) && Number(packageType) > 0) {
       const amt = Number(packageType);
-      selectedPackage = { name: `PKG-${amt}`, value: amt };
+      selectedPackage = { name: `PKG-${amt}`, value: amt, isNonIncome: false };
     }
 
     if (!selectedPackage || selectedPackage.value <= 0) {
@@ -312,7 +323,7 @@ const activateMemberPackage = async (req, res) => {
 
     // ── Activation WITH Package ──
     const amount = selectedPackage.value;
-    console.log(`💎 [Activation] Activating ${actualMemberId} WITH ₹${amount} package.`);
+    console.log(`💎 [Activation] Activating ${actualMemberId} WITH ₹${amount} package (isNonIncome: ${isNonIncome}).`);
 
     // 1. Update member_tbl basic status & ROI settings
     const updatedMember = await MemberModel.findOneAndUpdate(
@@ -323,10 +334,11 @@ const activateMemberPackage = async (req, res) => {
         package_value: amount,
         upgrade_status: "Active", // Activated with package
         Date_of_joining: activationDate,
-        roi_status: "Active",
-        roi_payout_target: 400,
+        is_non_income: isNonIncome,
+        roi_status: isNonIncome ? "Completed" : "Active",
+        roi_payout_target: isNonIncome ? 0 : 400,
         roi_payout_count: 0,
-        roi_daily_amount: Math.round(amount * 0.005 * 100) / 100,
+        roi_daily_amount: isNonIncome ? 0 : Math.round(amount * 0.005 * 100) / 100,
         roi_total_paid: 0,
         roi_start_date: activationDate,
         roi_last_payout_date: null,
@@ -345,13 +357,13 @@ const activateMemberPackage = async (req, res) => {
       payout_id: payoutId,
       date: moment().utcOffset("+05:30").toDate(),
       memberId: actualMemberId,
-      payout_type: "ROI (Primary)",
+      payout_type: isNonIncome ? "Package Activation (Non Income)" : "ROI (Primary)",
       ref_no: `ACT-P-${actualMemberId}-0`,
       amount: 0,
       count: 0,
       days: targetDays,
       status: "Approved",
-      description: "Primary Package Activation"
+      description: isNonIncome ? "25000 Package (Non Income) Activation" : "Primary Package Activation"
     });
 
     const activationTx = new TransactionModel({
@@ -360,16 +372,43 @@ const activateMemberPackage = async (req, res) => {
       member_id: actualMemberId,
       Name: updatedMember.Name || updatedMember.name,
       mobileno: updatedMember.mobileno || updatedMember.contactno,
-      description: `Package Activation – Day 0/${targetDays} (₹${amount} pkg)`,
-      transaction_type: "ROI Payout",
+      description: isNonIncome ? `Package Activation – 25000 Package (Non Income)` : `Package Activation – Day 0/${targetDays} (₹${amount} pkg)`,
+      transaction_type: isNonIncome ? "Package Activation" : "ROI Payout",
       ew_credit: "0",
       ew_debit: "0",
       status: "Completed",
-      benefit_type: "ROI",
+      benefit_type: isNonIncome ? "Activation" : "ROI",
       reference_no: payout.ref_no
     });
 
     await Promise.all([payout.save(), activationTx.save()]);
+
+    // 3. For Non-Income package: Update sponsor link only, skip MLM commissions & Level ROI
+    if (isNonIncome) {
+      try {
+        const sponsorCode = updatedMember.Sponsor_code || updatedMember.sponsor_id || existingMember.Sponsor_code || existingMember.sponsor_id;
+        if (sponsorCode) {
+          const { updateSponsorReferrals } = require("../mlmService/mlmService");
+          await updateSponsorReferrals(sponsorCode, actualMemberId);
+        }
+      } catch (refErr) {
+        console.error("⚠️ Sponsor referral link update error:", refErr.message);
+      }
+
+      console.log(`ℹ️ [Non-Income Package] 25000 Package (Non Income) activated for ${actualMemberId}. No MLM commissions or Level ROI created.`);
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...(updatedMember.toObject ? updatedMember.toObject() : updatedMember),
+          commissions: [],
+          totalCommission: 0
+        },
+        commissions: [],
+        totalCommission: 0,
+        message: "25000 Package (Non Income) activated successfully. No income or ROI will be generated."
+      });
+    }
 
     // 4. ✅ Trigger MLM level commissions
     try {

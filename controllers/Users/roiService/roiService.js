@@ -53,12 +53,17 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
         }
 
         const activeMembers = await MemberModel.find(memberQuery);
-        console.log(`🔍 [Daily Incentive] Found ${activeMembers.length} active members with primary packages.`);
+        // console.log(`🔍 [Daily Incentive] Found ${activeMembers.length} active members with primary packages.`);
 
         for (const member of activeMembers) {
             try {
                 const pkgAmount = Number(member.package_value) || 0;
                 if (pkgAmount <= 0) continue;
+
+                // Non-Income package does not generate daily ROI / incentive
+                if (member.is_non_income || String(member.spackage || "").toLowerCase().includes("non income") || String(member.spackage || "").toLowerCase().includes("nonincome")) {
+                    continue;
+                }
 
                 const targetDays = member.roi_payout_target || 400;
                 let currentCount = member.roi_payout_count || 0;
@@ -187,7 +192,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         }
                     );
 
-                    console.log(`✅ [Daily Incentive] Credited Day ${newCount}/${targetDays} to ${member.Member_id} (Level ${member.level || 0}): Total ₹${actualDaily} Credits`);
+                    // console.log(`✅ [Daily Incentive] Credited Day ${newCount}/${targetDays} to ${member.Member_id} (Level ${member.level || 0}): Total ₹${actualDaily} Credits`);
                 }
 
             } catch (memberErr) {
@@ -208,7 +213,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
         }
 
         const activeAddons = await AddOnPackageModel.find(addonQuery);
-        console.log(`🔍 [Daily Incentive] Found ${activeAddons.length} active add-on packages.`);
+        // console.log(`🔍 [Daily Incentive] Found ${activeAddons.length} active add-on packages.`);
 
         for (const addon of activeAddons) {
             try {
@@ -329,7 +334,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         }
                     );
 
-                    console.log(`✅ [Daily Incentive] Credited Addon Day ${newCount}/${targetDays} to ${addon.member_id}: Total ₹${dailyTotalAmount} Credits`);
+                    // console.log(`✅ [Daily Incentive] Credited Addon Day ${newCount}/${targetDays} to ${addon.member_id}: Total ₹${dailyTotalAmount} Credits`);
                 }
 
             } catch (addonErr) {
@@ -350,7 +355,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
         }
 
         const activeSchedules = await LevelRoiScheduleModel.find(levelRoiQuery);
-        console.log(`🔍 [Level Daily ROI - No Conditions] Found ${activeSchedules.length} active Level ROI schedules.`);
+        // console.log(`🔍 [Level Daily ROI - No Conditions] Found ${activeSchedules.length} active Level ROI schedules.`);
 
         for (const schedule of activeSchedules) {
             try {
@@ -378,20 +383,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                     continue;
                 }
 
-                // NO CONDITIONS (Conditions commented out for now):
-                /*
-                // User Rule: ONLY vendors who completed >= 3 levels (sponsor.level >= 3) can receive 100-day Level ROI
                 const sponsorRank = Number(sponsor.level) || 0;
-                if (sponsorRank < 3) {
-                    console.log(`⚠️ [Level Daily ROI Skipped] Sponsor ${schedule.sponsor_id} is Level ${sponsorRank} (Requires Level >= 3).`);
-                    continue;
-                }
-
-                if (schedule.level > 3 && sponsorRank < schedule.level) {
-                    console.log(`⚠️ [Level Daily ROI Skipped] Sponsor ${schedule.sponsor_id} is Level ${sponsorRank} (Requires Level >= ${schedule.level}).`);
-                    continue;
-                }
-                */
 
                 // Determine start date and next eligible dates (Daily starts the NEXT DAY after activation)
                 const startDateStr = schedule.start_date || todayStr;
@@ -421,6 +413,12 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                 let currentPaid = Number(schedule.total_paid) || 0;
 
                 for (const payoutDate of daysToProcess) {
+                    /*
+                    // Level matching condition (commented out as per user request to avoid affecting active database schedules)
+                    if (schedule.level > 1 && sponsorRank < schedule.level) {
+                        continue;
+                    }
+                    */
                     const remainingAllowed = Math.max(0, totalTarget - currentPaid);
                     if (remainingAllowed <= 0) {
                         await LevelRoiScheduleModel.updateOne(
@@ -521,7 +519,7 @@ const processDailyROI = async (targetMemberId = null, customToday = null) => {
                         }
                     );
 
-                    console.log(`✅ [Level Daily ROI] Credited ₹${actualDaily} to ${schedule.sponsor_id} (Level ${schedule.level}, Day ${newCount}/${targetDays})`);
+                    // console.log(`✅ [Level Daily ROI] Credited ₹${actualDaily} to ${schedule.sponsor_id} (Level ${schedule.level}, Day ${newCount}/${targetDays})`);
 
                     if (isScheduleDone) break;
                 }

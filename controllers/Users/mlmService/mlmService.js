@@ -147,6 +147,12 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
       return [];
     }
 
+    // Skip all MLM commissions if member activated with a Non-Income package
+    if (newMember.is_non_income || String(newMember.spackage || "").toLowerCase().includes("non income") || String(newMember.spackage || "").toLowerCase().includes("nonincome")) {
+      console.log(`ℹ️ [NON-INCOME PACKAGE] Member ${newMemberId} is on a Non-Income package (${newMember.spackage}). Skipping commission calculation.`);
+      return [];
+    }
+
     // Determine package value flexibly
     let packageValue = Number(specificAmount);
     if (isNaN(packageValue) || packageValue <= 0) {
@@ -202,25 +208,19 @@ const calculateCommissions = async (newMemberId, directSponsorId, specificAmount
       }
 
       // --- 2. Levels 2 to 10: PRODUCT LEVEL INCOME ---
-      // User Rule (Commented out temporarily as per user request - will re-enable later):
-      // * Levels 2 to 5: Sponsor must have level >= 3
-      // * Levels 6 to 10: Sponsor must have level >= 6
+      // User Rule:
+      // - Level 1: Direct referral income generated directly with NO level check.
+      // - Levels 2 to 10: To unlock Level N income, Sponsor must have level >= N (up to Level 10).
       const levelPercentage = levelBenefitsPercentages[upline.level] || 0;
       if (levelPercentage > 0 && upline.level > 1) {
         // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
         const sponsorLevel = Number(upline.sponsor_level) || 0;
 
-        /* TEMPORARILY DISABLED AS PER USER REQUEST - TO BE ENABLED LATER
-        if (upline.level >= 2 && upline.level <= 5 && sponsorLevel < 3) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level >= 3). Commission skipped.`);
+        // Level N check: Sponsor must have level >= upline.level (e.g. Level 2 requires level >= 2, Level 5 requires level >= 5, Level 8 requires level >= 8)
+        if (sponsorLevel < upline.level) {
+          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level >= ${upline.level}). Commission skipped.`);
           continue;
         }
-
-        if (upline.level >= 6 && upline.level <= 10 && sponsorLevel < 6) {
-          console.log(`⏭️ [LEVEL BONUS SKIPPED] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is at Level ${sponsorLevel} (Requires min Level >= 6). Commission skipped.`);
-          continue;
-        }
-        */
 
         const levelAmount = Number(((packageValue * levelPercentage) / 100).toFixed(2));
         if (levelAmount > 0) {
@@ -287,36 +287,22 @@ const processCommissions = async (commissions, session = null) => {
         }
 
         // LEVEL 1: DIRECT COMMISSION IS ADDED DIRECTLY (NO LEVEL CHECK)
-        // LEVEL 2-5: Min Level 3 compulsory (sponsor.level >= 3) [TEMPORARILY DISABLED AS PER USER REQUEST]
-        // LEVEL 6-10: Min Level 6 compulsory (sponsor.level >= 6) [TEMPORARILY DISABLED AS PER USER REQUEST]
-        /* TEMPORARILY DISABLED AS PER USER REQUEST - TO BE ENABLED LATER
+        // LEVELS 2-10: To unlock Level N, sponsor must have level >= N
         if (commission.level > 1) {
           // Strictly check the sponsor's LEVEL (from MemberModel.level / Dashboard Level Badge)
           const sponsorLevel = Number(sponsor.level) || 0;
 
-          if (commission.level >= 2 && commission.level <= 5 && sponsorLevel < 3) {
+          if (sponsorLevel < commission.level) {
             results.push({
               success: false,
               level: commission.level,
               sponsor_id: commission.sponsor_id,
               sponsor_name: commission.sponsor_name,
-              error: `Sponsor is at Level ${sponsorLevel}, requires min Level >= 3 for Level ${commission.level} commission`
-            });
-            continue;
-          }
-
-          if (commission.level >= 6 && commission.level <= 10 && sponsorLevel < 6) {
-            results.push({
-              success: false,
-              level: commission.level,
-              sponsor_id: commission.sponsor_id,
-              sponsor_name: commission.sponsor_name,
-              error: `Sponsor is at Level ${sponsorLevel}, requires min Level >= 6 for Level ${commission.level} commission`
+              error: `Sponsor is at Level ${sponsorLevel}, requires min Level >= ${commission.level} for Level ${commission.level} commission`
             });
             continue;
           }
         }
-        */
 
         // Prevent duplicate commission for the same buyer, level and amount processed within the last 10 minutes
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -623,9 +609,9 @@ const getUplineTree = async (memberIdOrReq, maxLevelsOrRes = 15) => {
       const sponsorLvl = Number(u.sponsor_level) || 0;
       const directCount = Number(u.direct_referrals_count) || 0;
       let eligible = isActive;
-      // Temporarily disabled as per user request - to be enabled later:
-      // if (u.level >= 2 && u.level <= 5 && sponsorLvl < 3) eligible = false;
-      // if (u.level >= 6 && u.level <= 10 && sponsorLvl < 6) eligible = false;
+      // User Rule: Direct referral (Level 1) is always eligible if active.
+      // Levels 2 to 10: Sponsor must have level >= u.level
+      if (u.level > 1 && sponsorLvl < u.level) eligible = false;
 
       return {
         level: u.level,
@@ -659,7 +645,7 @@ const getCommissionSummary = () => {
     referral_rates: referralCommissionPercentages,
     level_rates: levelBenefitsPercentages,
     level_roi_rates: levelRoiPercentages,
-    condition: "Level 1: 5% Direct Referral. Level 2-5: Min Level 3 required (level >= 3). Level 6-10: Min Level 6 required (level >= 6)."
+    condition: "Level 1: 5% Direct Referral (No level check). Levels 2 to 10: To unlock Level N commission, sponsor must have Level >= N (up to Level 10)."
   };
 };
 
@@ -882,6 +868,12 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
       return [];
     }
 
+    // Skip all Level ROI schedules if member activated with a Non-Income package
+    if (newMember.is_non_income || String(newMember.spackage || "").toLowerCase().includes("non income") || String(newMember.spackage || "").toLowerCase().includes("nonincome")) {
+      console.log(`ℹ️ [NON-INCOME PACKAGE] Member ${newMemberId} is on a Non-Income package (${newMember.spackage}). Skipping Level ROI schedules.`);
+      return [];
+    }
+
     const uplineSponsors = await findUplineSponsors(newMemberId, 10);
     if (!uplineSponsors || uplineSponsors.length === 0) {
       console.log(`ℹ️ No upline sponsors found for ${newMemberId}`);
@@ -902,20 +894,13 @@ const createLevelRoiSchedules = async (newMemberId, packageAmount) => {
         continue;
       }
 
-      // NO CONDITIONS (Conditions commented out for now):
-      /*
-      // User Rule: ONLY vendors who completed >= 3 levels (sponsor.level >= 3) are eligible for 100-day Level ROI
-      if (sponsorRank < 3) {
-        console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) is Level ${sponsorRank} (Requires completed >= 3 levels).`);
-        continue;
-      }
-
-      // For levels above 3, sponsor must have unlocked that level
-      if (upline.level > 3 && sponsorRank < upline.level) {
+      // User Rule (Active): 1-to-1 Level Matching for Level ROI:
+      // Level 1: Direct sponsor gets Level 1 ROI without level restriction
+      // Levels 2 to 10: To unlock Level N ROI, Sponsor must have level >= N (Level 2 requires level >= 2, Level 3 requires level >= 3, etc.)
+      if (upline.level > 1 && sponsorRank < upline.level) {
         console.log(`⏭️ [100-Day Level ROI Skipped] Level ${upline.level}: ${upline.sponsor_name} (${upline.sponsor_id}) has Level ${sponsorRank} (Requires Level >= ${upline.level}).`);
         continue;
       }
-      */
       const percentage = levelRoiPercentages[upline.level] || 0;
       if (percentage <= 0) continue;
 
