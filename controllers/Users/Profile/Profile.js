@@ -119,8 +119,8 @@ const getMemberDetails = async (req, res) => {
 
     const indirectCount = Math.max(0, totalTeamCount - directCount);
 
-    // Calculate level: increases with each direct referral until 20
-    const calculatedLevel = Math.min(20, Math.max(Number(foundUser.level) || 0, directCount));
+    // Calculate level: strictly equals the number of direct referrals (up to 20)
+    const calculatedLevel = Math.min(20, Math.max(0, directCount));
     if (foundUser.level !== calculatedLevel) {
       foundUser.level = calculatedLevel;
       await MemberModel.updateOne({ _id: foundUser._id }, { $set: { level: calculatedLevel } });
