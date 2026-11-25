@@ -93,7 +93,22 @@ const getTransactionDetails = async (req, res) => {
         }
       },
       {
+        $lookup: {
+          from: "vendor_tbl",
+          localField: "member_id",
+          foreignField: "Member_id",
+          as: "sponsor_member"
+        }
+      },
+      {
         $addFields: {
+          member_code: {
+            $ifNull: [
+              "$member_code",
+              { $arrayElemAt: ["$sponsor_member.member_code", 0] },
+              "$member_id"
+            ]
+          },
           related_member_name: {
             $ifNull: [
               "$related_member_name",
@@ -116,6 +131,7 @@ const getTransactionDetails = async (req, res) => {
       },
       {
         $project: {
+          sponsor_member: 0,
           related_member: 0,
           extracted_related_id: 0
         }
