@@ -313,16 +313,10 @@ const processCommissions = async (commissions, session = null) => {
             {
               $or: [
                 { related_member_id: commission.new_member_id },
-                { related_member_name: commission.new_member_name },
                 { description: new RegExp(`member ${commission.new_member_id}`, 'i') }
               ]
             },
-            {
-              $or: [
-                { createdAt: { $gte: tenMinutesAgo } },
-                { transaction_date: { $gte: tenMinutesAgo.toISOString().split('T')[0] } }
-              ]
-            }
+            { createdAt: { $gte: tenMinutesAgo } }
           ]
         }).session(session);
 
